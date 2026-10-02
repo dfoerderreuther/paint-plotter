@@ -1,0 +1,14 @@
+{
+  "work_area": {
+    "width_mm": 500,
+    "height_mm": 500
+  },
+  "z": {
+    "up": 2,
+    "down": 0
+  },
+  "feed_rates": {
+    "travel_mm_min": 3000,
+    "paint_mm_min": 1500
+  }
+}

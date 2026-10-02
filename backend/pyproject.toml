@@ -1,0 +1,26 @@
+[project]
+name = "paint-plotter"
+version = "0.1.0"
+description = "Paint Plotter backend: SVG to brush-painting G-code"
+authors = [
+    { name = "Dominik Förderreuther", email = "dominik@eleon.de" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.142.2",
+    "uvicorn[standard]>=0.54.0",
+    "vpype>=1.15.0",
+]
+
+[project.scripts]
+paint-plotter = "paint_plotter:main"
+
+[build-system]
+requires = ["uv_build>=0.12.22,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.13.1",
+    "pytest>=9.1.1",
+]
