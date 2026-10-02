@@ -392,6 +392,26 @@ export default function App() {
     }
   }
 
+  // Auto-add the palette page when the drawing has colors but there is no page and no
+  // wells yet (new SVG or fresh project). Existing wells are never overridden.
+  const needsPalette = !!drawing && drawingColors.length > 0 && !layout.palette && layout.wells.length === 0
+  const autoArranging = useRef(false)
+  useEffect(() => {
+    if (!needsPalette || autoArranging.current) return
+    autoArranging.current = true
+    arrangeWellLayout(layout, drawingColors, drawing && placedRect(drawing, placement))
+      .then(
+        (l) => {
+          setLayout(l)
+          message.info(`Added a palette page with ${l.wells.length} crosses`)
+        },
+        (e: Error) => message.error(e.message),
+      )
+      .finally(() => {
+        autoArranging.current = false
+      })
+  }, [needsPalette]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const generate = async () => {
     if (!paintRequest) return
     setGenerating(true)
@@ -489,7 +509,8 @@ export default function App() {
             <Tabs
               activeKey={tab}
               onChange={(k) => setTab(k as PanelTab)}
-              tabBarStyle={{ paddingInline: 16, marginBottom: 12 }}
+              tabBarGutter={18}
+              tabBarStyle={{ paddingInline: 12, marginBottom: 12 }}
               style={{ paddingBottom: 16 }}
               items={[
                 {
@@ -513,6 +534,24 @@ export default function App() {
                           })
                         }
                         area={bed}
+                      />
+                    </div>
+                  ),
+                },
+                {
+                  key: 'wells',
+                  label: 'Wells',
+                  icon: <BgColorsOutlined />,
+                  children: (
+                    <div style={{ paddingInline: 12 }}>
+                      <WellsPanel
+                        layout={layout}
+                        onChange={setLayout}
+                        warnings={layoutWarnings}
+                        selectedId={selectedWell}
+                        onSelect={selectWell}
+                        drawingColors={drawingColors}
+                        onArrange={arrange}
                       />
                     </div>
                   ),
@@ -559,24 +598,6 @@ export default function App() {
                         hasWells={layout.wells.length > 0}
                         showToolpaths={showToolpaths}
                         onShowToolpathsChange={setShowToolpaths}
-                      />
-                    </div>
-                  ),
-                },
-                {
-                  key: 'wells',
-                  label: 'Wells',
-                  icon: <BgColorsOutlined />,
-                  children: (
-                    <div style={{ paddingInline: 12 }}>
-                      <WellsPanel
-                        layout={layout}
-                        onChange={setLayout}
-                        warnings={layoutWarnings}
-                        selectedId={selectedWell}
-                        onSelect={selectWell}
-                        drawingColors={drawingColors}
-                        onArrange={arrange}
                       />
                     </div>
                   ),

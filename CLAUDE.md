@@ -170,6 +170,10 @@ Brush cleaning between colors is also still being developed. Planned options:
    It draws only the crosses and their labels.
 4. Put each paint onto its cross. **The brush picks up paint at the centre of the cross.**
 
+**Automatic palette page:** when a drawing with colors is loaded and the layout has **no
+palette page and no wells**, the app runs Arrange by itself (new SVG or fresh project). Existing
+wells are never overridden, so "Remove page" with wells kept does not bring the page back.
+
 Wells can also be **circle** or **rect** outlines (any size) for physical cups or pans,
 edited by hand. Layouts can also be saved to the library `data/well_layouts/<name>.json` and reused.
 
@@ -254,6 +258,8 @@ checking, a cross counts as a circle the size of the cross (the paint spot).
   (File: Load SVG, well layout New/Open/Save/Save as · Export: pencil G-code · View:
   plotter settings). Dialogs are `Modal`s, settings go in a `Drawer`, and the side panels use
   `Tabs` + `Card` + `Table` + vertical `Form`. A status bar sits at the bottom.
+- Side panel tabs in workflow order: Drawing → Wells → Colors → Paint (narrow tab spacing, so
+  all four fit in the 380 px panel).
 - App state lives in `App.tsx`. Menu actions go through `onMenu`. Wells can be selected
   in the table or by clicking them on the bed.
 - Avoid props that are deprecated in antd 6: `Alert message` → `title`, `Drawer width` → `size`,
