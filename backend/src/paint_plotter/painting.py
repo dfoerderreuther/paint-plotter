@@ -52,6 +52,9 @@ class DipSettings(BaseModel):
     # tap: down and up. circle: down, one circle in the paint, up.
     mode: Literal["tap", "circle"] = "tap"
     circle_radius_mm: float = Field(default=3, gt=0)
+    # When a stroke continues after a dip, put the brush down this far back along the
+    # already painted part and paint over it again (not counted as paint per dip).
+    resume_overlap_mm: float = Field(default=0, ge=0)
 
 
 class PaintSettings(BaseModel):
@@ -249,13 +252,29 @@ def order_nearest(paths: list[Polyline], start: Point) -> list[Polyline]:
 Event = tuple[Literal["dip"], None] | tuple[Literal["stroke"], Polyline]
 
 
-def split_by_paint(strokes: list[Polyline], paint_distance: float) -> Iterator[Event]:
-    """Dip first, then paint; dip again whenever `paint_distance` mm have been painted,
-    continuing the stroke exactly where it was cut."""
+def _tail(path: Polyline, length: float) -> Polyline:
+    """The last `length` mm of `path` (the whole path if it is shorter)."""
+    out = [path[-1]]
+    for a, b in zip(reversed(path[:-1]), reversed(path[1:])):  # segments a→b, from the end
+        seg = math.dist(a, b)
+        if seg >= length:
+            t = length / seg if seg else 0
+            out.append((b[0] + (a[0] - b[0]) * t, b[1] + (a[1] - b[1]) * t))
+            break
+        out.append(a)
+        length -= seg
+    return out[::-1]
+
+
+def split_by_paint(strokes: list[Polyline], paint_distance: float, resume_overlap: float = 0) -> Iterator[Event]:
+    """Dip first, then paint; dip again whenever `paint_distance` mm have been painted.
+    A cut stroke continues where it was cut, or `resume_overlap` mm before that (never
+    before the start of the stroke); the overlap is not counted as painted distance."""
     yield ("dip", None)
     left = paint_distance
     for stroke in strokes:
         piece: Polyline = [stroke[0]]
+        walked: Polyline = [stroke[0]]  # the stroke up to the current point
         for a, b in zip(stroke, stroke[1:]):
             seg = math.dist(a, b)
             start = a
@@ -263,13 +282,15 @@ def split_by_paint(strokes: list[Polyline], paint_distance: float) -> Iterator[E
                 t = left / seg
                 cut = (start[0] + (b[0] - start[0]) * t, start[1] + (b[1] - start[1]) * t)
                 piece.append(cut)
+                walked.append(cut)
                 yield ("stroke", piece)
                 yield ("dip", None)
                 seg -= left
                 left = paint_distance
                 start = cut
-                piece = [cut]
+                piece = _tail(walked, resume_overlap) if resume_overlap > 0 else [cut]
             piece.append(b)
+            walked.append(b)
             left -= seg
         if len(piece) >= 2:
             yield ("stroke", piece)
@@ -362,7 +383,7 @@ def plan_painting(req: PaintRequest, config: PlotterConfig) -> PaintPlan:
         g.comment(f"drawing colors: {', '.join(colors)}")
         dips = 0
         painted: list[Polyline] = []
-        for kind, piece in split_by_paint(strokes, s.paint_distance_mm):
+        for kind, piece in split_by_paint(strokes, s.paint_distance_mm, s.dip.resume_overlap_mm):
             if kind == "dip":
                 _dip(g, well, s.dip)
                 dips += 1

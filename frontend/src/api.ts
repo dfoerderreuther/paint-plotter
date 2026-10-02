@@ -162,14 +162,19 @@ export interface PaintSettings {
     /** Hatch only (contour always starts with the outline). */
     outline: boolean
   }
-  dip: { mode: 'tap' | 'circle'; circle_radius_mm: number }
+  dip: {
+    mode: 'tap' | 'circle'
+    circle_radius_mm: number
+    /** After a dip, restart this far back on the painted part of a cut stroke (not counted as paint per dip). */
+    resume_overlap_mm: number
+  }
 }
 
 export const DEFAULT_PAINT_SETTINGS: PaintSettings = {
   brush_width_mm: 3,
   paint_distance_mm: 150,
   fill: { pattern: 'hatch', angle_deg: 45, overlap: 0.2, outline: true },
-  dip: { mode: 'tap', circle_radius_mm: 3 },
+  dip: { mode: 'tap', circle_radius_mm: 3, resume_overlap_mm: 0 },
 }
 
 export interface PaintRequest {

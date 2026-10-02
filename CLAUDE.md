@@ -211,6 +211,10 @@ checking, a cross counts as a circle the size of the cross (the paint spot).
 - **Paint per dip:** dip at the start, then dip again every `paint_distance_mm` of painting.
   Strokes are cut at that point and continue there after the dip. Leftover paint carries
   over to the next stroke.
+- **Restart overlap** (`dip.resume_overlap_mm`, default 0): when a cut stroke continues after a
+  dip, the brush goes down this far back on the already painted part (following the path, also
+  around corners), then paints overlap + paint-per-dip before the next dip. It is never applied
+  before the start of a stroke, and never at the start of a new stroke.
 - **Dip motion:** `tap` (down, up at the well centre) or `circle` (down, one circle of
   `circle_radius_mm`, back to the centre, up).
 - Strokes are simplified to 0.05 mm, and moves outside the work area are refused (422 with message).

@@ -147,6 +147,39 @@ def test_split_carries_remaining_paint_to_next_stroke():
     assert [length(p) for p in pieces] == pytest.approx([6, 4, 2])
 
 
+def test_resume_overlap_goes_back_and_adds_to_the_piece():
+    # 15 mm per dip, restart 2 mm back: 0–15, 13–30, 28–40
+    events = list(split_by_paint([[(0, 0), (40, 0)]], 15, resume_overlap=2))
+    pieces = [p for k, p in events if k == "stroke"]
+    assert [k for k, _ in events].count("dip") == 3
+    assert [(p[0][0], p[-1][0]) for p in pieces] == pytest.approx([(0, 15), (13, 30), (28, 40)])
+
+
+def test_resume_overlap_follows_corners():
+    # cut 1 mm after a corner: going back 3 mm walks around the corner
+    stroke = [(0, 0), (10, 0), (10, 10)]
+    pieces = [p for k, p in split_by_paint([stroke], 11, resume_overlap=3) if k == "stroke"]
+    assert pieces[1][0] == pytest.approx((8, 0))
+    assert pieces[1][1] == pytest.approx((10, 0))
+    assert length(pieces[1]) == pytest.approx(3 + 9)
+
+
+def test_resume_overlap_never_goes_before_the_stroke_start():
+    # first stroke uses 14 of 15 mm; the second is cut 1 mm in, so it can only go back 1 mm
+    events = list(split_by_paint([[(0, 0), (14, 0)], [(0, 5), (20, 5)]], 15, resume_overlap=2))
+    pieces = [p for k, p in events if k == "stroke"]
+    assert [(p[0], p[-1]) for p in pieces[1:]] == pytest.approx(
+        [((0, 5), (1, 5)), ((0, 5), (16, 5)), ((14, 5), (20, 5))]
+    )
+
+
+def test_no_overlap_before_a_new_stroke():
+    # paint runs out exactly at a stroke end: the next stroke starts at its own start
+    events = list(split_by_paint([[(0, 0), (15, 0)], [(0, 5), (10, 5)]], 15, resume_overlap=2))
+    pieces = [p for k, p in events if k == "stroke"]
+    assert pieces[1][0] == pytest.approx((0, 5))
+
+
 # ---------------------------------------------------------------- full plan
 
 

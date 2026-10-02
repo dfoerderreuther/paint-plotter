@@ -180,7 +180,7 @@ export default function PaintPanel(p: PaintPanelProps) {
 
       <Card size="small" title="Dip">
         <Form layout="vertical" size="small">
-          <Form.Item label="Motion in the paint" style={{ marginBottom: s.dip.mode === 'circle' ? 8 : 0 }}>
+          <Form.Item label="Motion in the paint" style={{ marginBottom: 8 }}>
             <Segmented<PaintSettings['dip']['mode']>
               block
               value={s.dip.mode}
@@ -192,7 +192,7 @@ export default function PaintPanel(p: PaintPanelProps) {
             />
           </Form.Item>
           {s.dip.mode === 'circle' && (
-            <Form.Item label="Circle radius" style={{ marginBottom: 0 }}>
+            <Form.Item label="Circle radius" style={{ marginBottom: 8 }}>
               <InputNumber
                 suffix="mm"
                 min={0.5}
@@ -203,6 +203,20 @@ export default function PaintPanel(p: PaintPanelProps) {
               />
             </Form.Item>
           )}
+          <Form.Item
+            label="Restart overlap"
+            tooltip="After a dip, a stroke continues this far back on the part already painted, then paints on. Example: 2 mm overlap and 15 mm paint per dip → back 2 mm, brush down, paint 2 + 15 mm, next dip. Not used at the start of a new stroke."
+            style={{ marginBottom: 0 }}
+          >
+            <InputNumber
+              suffix="mm"
+              min={0}
+              step={0.5}
+              value={s.dip.resume_overlap_mm}
+              onChange={(v) => set({ dip: { ...s.dip, resume_overlap_mm: v ?? 0 } })}
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
         </Form>
       </Card>
 
