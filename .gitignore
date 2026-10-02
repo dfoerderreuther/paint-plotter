@@ -8,8 +8,8 @@ __pycache__/
 node_modules/
 frontend/dist/
 
-# Saved paintings and generated G-code
-projects/
+# Projects, uploaded SVGs, layouts and generated G-code
+data/
 *.gcode
 
 .DS_Store

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config" / "plotter.json"
-DEFAULT_DATA_DIR = REPO_ROOT / "projects"
+DEFAULT_DATA_DIR = REPO_ROOT / "data"
 
 
 class WorkArea(BaseModel):

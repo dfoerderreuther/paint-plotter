@@ -1,26 +1,42 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Alert, App as AntApp, Flex, Layout, Spin, Tabs, Tag, Typography } from 'antd'
-import { BgColorsOutlined, HighlightOutlined, NodeIndexOutlined, PictureOutlined } from '@ant-design/icons'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Alert, App as AntApp, Flex, Layout, Spin, Tabs, Tag, Tooltip, Typography } from 'antd'
+import {
+  BgColorsOutlined,
+  FolderOutlined,
+  HighlightOutlined,
+  NodeIndexOutlined,
+  PictureOutlined,
+} from '@ant-design/icons'
 import {
   DEFAULT_PAINT_SETTINGS,
+  NotFoundError,
   arrangeWellLayout,
   checkWellLayout,
+  createProject,
+  deleteProject,
   deleteWellLayout,
   downloadPaintingZip,
   downloadWellLayoutGcode,
   fetchConfig,
+  getProject,
   getWellLayout,
+  listProjects,
   listWellLayouts,
   matchColors,
   planPainting,
+  renameProject,
+  saveProject,
   saveWellLayout,
-  uploadSvg,
+  uploadProjectSvg,
   wellLayoutGcodeText,
   type ColorMatch,
   type PaintPlan,
   type PaintRequest,
   type PaintSettings,
   type PlotterConfig,
+  type Project,
+  type ProjectData,
+  type ProjectInfo,
   type Rect,
   type SvgDrawing,
   type WellLayout,
@@ -35,6 +51,7 @@ import LoadSvgModal from './components/LoadSvgModal'
 import PaintPanel from './components/PaintPanel'
 import { OpenLayoutModal, SaveLayoutModal } from './components/LayoutModals'
 import PlotterDrawer from './components/PlotterDrawer'
+import { OpenProjectModal, ProjectNameModal } from './components/ProjectModals'
 import StatusBar from './components/StatusBar'
 import ToolpathView from './components/ToolpathView'
 import WellsPanel from './components/WellsPanel'
@@ -45,29 +62,46 @@ const { Header, Sider, Content } = Layout
 
 const newLayout = (): WellLayout => ({ name: 'untitled', palette: null, margin_mm: 5, wells: [] })
 
-type Dialog = 'load-svg' | 'layout-open' | 'layout-save-as' | 'plotter' | null
+type Dialog =
+  | 'load-svg'
+  | 'layout-open'
+  | 'layout-save-as'
+  | 'plotter'
+  | 'project-open'
+  | 'project-new'
+  | 'project-rename'
+  | null
 type PanelTab = 'drawing' | 'wells' | 'colors' | 'paint'
 
-const SETTINGS_KEY = 'paint-plotter.paint-settings'
+const DEFAULT_PROJECT = 'default'
+const LAST_PROJECT_KEY = 'paint-plotter.last-project'
 
-/** Paint settings are remembered per browser (convenience only; falls back to defaults). */
-function loadPaintSettings(): PaintSettings {
+// The last opened project is remembered per browser (convenience only).
+function lastProject(): string {
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY)
-    if (raw) {
-      const s = JSON.parse(raw) as Partial<PaintSettings>
-      return {
-        ...DEFAULT_PAINT_SETTINGS,
-        ...s,
-        fill: { ...DEFAULT_PAINT_SETTINGS.fill, ...s.fill },
-        dip: { ...DEFAULT_PAINT_SETTINGS.dip, ...s.dip },
-      }
-    }
+    return localStorage.getItem(LAST_PROJECT_KEY) || DEFAULT_PROJECT
   } catch {
-    // storage unavailable or corrupt
+    return DEFAULT_PROJECT
   }
-  return DEFAULT_PAINT_SETTINGS
 }
+function rememberProject(name: string) {
+  try {
+    localStorage.setItem(LAST_PROJECT_KEY, name)
+  } catch {
+    // storage unavailable
+  }
+}
+
+/** Settings from older saves may lack newer fields. */
+const withDefaults = (s: Partial<PaintSettings>): PaintSettings => ({
+  ...DEFAULT_PAINT_SETTINGS,
+  ...s,
+  fill: { ...DEFAULT_PAINT_SETTINGS.fill, ...s.fill },
+  dip: { ...DEFAULT_PAINT_SETTINGS.dip, ...s.dip },
+})
+
+/** The saved form of the project (also used to detect unsaved changes). */
+const projectJsonOf = (p: Omit<Project, 'updated'>) => JSON.stringify({ ...p, hidden_layers: [...p.hidden_layers].sort() })
 
 export default function App() {
   const { message } = AntApp.useApp()
@@ -96,19 +130,35 @@ export default function App() {
   const [previewPaint, setPreviewPaint] = useState(false)
 
   // Painting
-  const [paintSettings, setPaintSettings] = useState<PaintSettings>(loadPaintSettings)
+  const [paintSettings, setPaintSettings] = useState<PaintSettings>(DEFAULT_PAINT_SETTINGS)
   const [plan, setPlan] = useState<PaintPlan | null>(null)
   const [planJson, setPlanJson] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [showToolpaths, setShowToolpaths] = useState(true)
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(paintSettings))
-    } catch {
-      // ignore
-    }
-  }, [paintSettings])
+  // Project (autosaved to data/projects/<name>/)
+  const [projectName, setProjectName] = useState<string | null>(null)
+  const [projects, setProjects] = useState<ProjectInfo[]>([])
+  const [savedProjectJson, setSavedProjectJson] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [renameSuggestion, setRenameSuggestion] = useState<string | null>(null)
+
+  const projectJson = useMemo(
+    () =>
+      projectName &&
+      projectJsonOf({
+        name: projectName,
+        svg_filename: fileName,
+        placement,
+        hidden_layers: [...hidden],
+        color_choices: colorChoices,
+        paint_settings: paintSettings,
+        layout,
+      }),
+    [projectName, fileName, placement, hidden, colorChoices, paintSettings, layout],
+  )
+  const projectDirty = !!projectJson && projectJson !== savedProjectJson
 
   const layoutDirty = cleanJson !== JSON.stringify(layout)
 
@@ -116,6 +166,76 @@ export default function App() {
     fetchConfig().then(setConfig, (e: Error) => setError(e.message))
     listWellLayouts().then(setSavedNames, () => {})
   }, [])
+
+  /** Puts a loaded project into the editor state. */
+  const applyProject = ({ project: p, drawing: d }: ProjectData) => {
+    const settings = withDefaults(p.paint_settings)
+    setProjectName(p.name)
+    setDrawing(d)
+    setFileName(p.svg_filename)
+    setPlacement(p.placement)
+    setHidden(new Set(p.hidden_layers))
+    setColorChoices(p.color_choices)
+    setColorMatches([])
+    setPaintSettings(settings)
+    setLayout(p.layout)
+    setCleanJson(JSON.stringify(p.layout))
+    setSelectedWell(null)
+    setPlan(null)
+    setSavedProjectJson(projectJsonOf({ ...p, paint_settings: settings }))
+    setSaveError(null)
+    rememberProject(p.name)
+  }
+
+  /** Opens a project; falls back to (and if needed creates) the default project. */
+  const openProject = async (name: string) => {
+    try {
+      applyProject(await getProject(name))
+      return true
+    } catch (e) {
+      if (!(e instanceof NotFoundError)) message.error((e as Error).message)
+      if (name === DEFAULT_PROJECT) {
+        try {
+          applyProject(await createProject(DEFAULT_PROJECT))
+        } catch {
+          // Created meanwhile (e.g. by another tab): load it.
+          await run(async () => applyProject(await getProject(DEFAULT_PROJECT)))
+        }
+      } else {
+        message.warning(`Project '${name}' not found, opening '${DEFAULT_PROJECT}'`)
+        await openProject(DEFAULT_PROJECT)
+      }
+      return false
+    }
+  }
+
+  // On start: open the last project (once, also under StrictMode's double effects).
+  const started = useRef(false)
+  useEffect(() => {
+    if (started.current) return
+    started.current = true
+    openProject(lastProject())
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Autosave shortly after each change.
+  useEffect(() => {
+    if (!projectJson || projectJson === savedProjectJson) return
+    const t = setTimeout(async () => {
+      setSaving(true)
+      try {
+        await saveProject(JSON.parse(projectJson) as Project)
+        setSavedProjectJson(projectJson)
+        setSaveError(null)
+      } catch (e) {
+        setSaveError((e as Error).message)
+      } finally {
+        setSaving(false)
+      }
+    }, 800)
+    return () => clearTimeout(t)
+  }, [projectJson, savedProjectJson])
+
+  const refreshProjects = () => listProjects().then(setProjects, () => {})
 
   // Re-check the layout on the backend shortly after each edit.
   useEffect(() => {
@@ -154,8 +274,9 @@ export default function App() {
         layout,
         color_map: colorMap,
         settings: paintSettings,
+        project_name: projectName,
       },
-    [drawing, hidden, placement, layout, colorMap, paintSettings],
+    [drawing, hidden, placement, layout, colorMap, paintSettings, projectName],
   )
   const paintRequestJson = useMemo(() => (paintRequest ? JSON.stringify(paintRequest) : null), [paintRequest])
   const cannotPaint = !drawing
@@ -184,17 +305,54 @@ export default function App() {
   }
 
   const loadSvg = async (file: File) => {
-    const d = await run(() => uploadSvg(file))
-    if (!d) return false
-    setDrawing(d)
-    setFileName(file.name)
+    if (!projectName) return false
+    const data = await run(() => uploadProjectSvg(projectName, file))
+    if (!data) return false
+    setDrawing(data.drawing)
+    setFileName(data.project.svg_filename)
     setPlacement(DEFAULT_PLACEMENT)
     setHidden(new Set())
     setColorChoices({})
     setColorMatches([])
     setPlan(null)
     setTab('drawing')
+    if (projectName === DEFAULT_PROJECT) {
+      // Nudge: give the project a real name, suggested from the file name.
+      setRenameSuggestion(file.name.replace(/\.svg$/i, ''))
+      refreshProjects()
+      setTimeout(() => setDialog('project-rename'), 300)
+    }
     return true
+  }
+
+  const newProject = async (name: string) => {
+    const created = await run(() => createProject(name), () => `Created project '${name}'`)
+    if (created) {
+      applyProject(created)
+      setDialog(null)
+      setTab('drawing')
+    }
+  }
+
+  const rename = async (name: string) => {
+    if (!projectName) return
+    const p = await run(() => renameProject(projectName, name), () => `Renamed to '${name}'`)
+    if (p) {
+      setProjectName(p.name) // autosave writes under the new name
+      rememberProject(p.name)
+      setDialog(null)
+      refreshProjects()
+    }
+  }
+
+  const removeProject = async (name: string) => {
+    if (!(await run(() => deleteProject(name), () => `Deleted project '${name}'`))) return
+    refreshProjects()
+    if (name === projectName) {
+      setProjectName(null) // stop autosave for the deleted project
+      setDialog(null)
+      await openProject(DEFAULT_PROJECT)
+    }
   }
 
   const openLayout = async (name: string) => {
@@ -255,6 +413,16 @@ export default function App() {
     switch (action) {
       case 'load-svg':
         return setDialog('load-svg')
+      case 'project-new':
+        refreshProjects()
+        return setDialog('project-new')
+      case 'project-open':
+        refreshProjects()
+        return setDialog('project-open')
+      case 'project-rename':
+        refreshProjects()
+        setRenameSuggestion(null)
+        return setDialog('project-rename')
       case 'layout-new':
         setLayout(newLayout())
         setCleanJson(JSON.stringify(newLayout()))
@@ -289,6 +457,24 @@ export default function App() {
         </Typography.Title>
         <AppMenu onAction={onMenu} />
         <Flex gap={4}>
+          {projectName && (
+            <Tooltip
+              title={
+                projectName === DEFAULT_PROJECT
+                  ? 'Give this project its own name (click, or File → Rename project…)'
+                  : 'Rename project'
+              }
+            >
+              <Tag
+                icon={<FolderOutlined />}
+                color={projectName === DEFAULT_PROJECT ? 'warning' : 'processing'}
+                style={{ cursor: 'pointer' }}
+                onClick={() => onMenu('project-rename')}
+              >
+                {projectName}
+              </Tag>
+            </Tooltip>
+          )}
           {fileName && <Tag icon={<PictureOutlined />}>{fileName}</Tag>}
           <Tag icon={<BgColorsOutlined />}>
             {layout.name}
@@ -436,6 +622,9 @@ export default function App() {
       </Layout>
 
       <StatusBar
+        projectName={projectName}
+        saveState={saveError ? 'error' : saving ? 'saving' : projectDirty ? 'pending' : 'saved'}
+        saveError={saveError}
         fileName={fileName}
         scale={drawing ? placement.scale : null}
         layoutName={layout.name}
@@ -446,6 +635,42 @@ export default function App() {
       />
 
       <LoadSvgModal open={dialog === 'load-svg'} onClose={() => setDialog(null)} onLoad={loadSvg} />
+      <OpenProjectModal
+        open={dialog === 'project-open'}
+        projects={projects}
+        current={projectName}
+        onClose={() => setDialog(null)}
+        onOpen={async (name) => {
+          if (await openProject(name)) setDialog(null)
+        }}
+        onDelete={removeProject}
+      />
+      <ProjectNameModal
+        key={dialog === 'project-new' ? 'new-open' : 'new-closed'}
+        open={dialog === 'project-new'}
+        title="New project"
+        okText="Create"
+        initialName=""
+        taken={projects.map((p) => p.name)}
+        hint="A project keeps the SVG, its placement, wells, color choices and paint settings. It is saved automatically in data/projects/."
+        onClose={() => setDialog(null)}
+        onOk={newProject}
+      />
+      <ProjectNameModal
+        key={dialog === 'project-rename' ? `rename-${renameSuggestion ?? projectName}` : 'rename-closed'}
+        open={dialog === 'project-rename'}
+        title="Rename project"
+        okText="Rename"
+        initialName={renameSuggestion ?? projectName ?? ''}
+        taken={projects.map((p) => p.name).filter((n) => n !== projectName)}
+        hint={
+          projectName === DEFAULT_PROJECT
+            ? `This project is still called '${DEFAULT_PROJECT}'. Give it its own name so it is easy to find again.`
+            : undefined
+        }
+        onClose={() => setDialog(null)}
+        onOk={rename}
+      />
       <OpenLayoutModal
         open={dialog === 'layout-open'}
         saved={savedNames}

@@ -183,6 +183,7 @@ export interface PaintRequest {
   layout: WellLayout
   color_map: Record<string, string | null>
   settings: PaintSettings
+  project_name?: string | null
 }
 
 export interface PaintFile {
@@ -211,3 +212,57 @@ export const planPainting = (req: PaintRequest) =>
 
 /** Zip with the pencil layout (01), brush files (02…) and steps.txt. */
 export const downloadPaintingZip = (req: PaintRequest) => downloadPost('/api/paint/export', req, 'painting.zip')
+
+// ---------------------------------------------------------------- projects
+
+export interface Project {
+  name: string
+  svg_filename: string | null
+  placement: { x: number; y: number; scale: number }
+  hidden_layers: string[]
+  color_choices: Record<string, string | null>
+  paint_settings: PaintSettings
+  layout: WellLayout
+  updated?: string | null
+}
+
+export interface ProjectInfo {
+  name: string
+  updated: string | null
+  svg_filename: string | null
+}
+
+export interface ProjectData {
+  project: Project
+  drawing: SvgDrawing | null
+}
+
+export class NotFoundError extends Error {}
+
+const projectUrl = (name: string) => `/api/projects/${encodeURIComponent(name)}`
+
+export const listProjects = () => fetch('/api/projects').then((r) => parse<ProjectInfo[]>(r))
+
+export async function getProject(name: string): Promise<ProjectData> {
+  const res = await fetch(projectUrl(name))
+  if (res.status === 404) throw new NotFoundError(`Project '${name}' not found`)
+  return parse<ProjectData>(res)
+}
+
+export const createProject = (name: string) =>
+  fetch('/api/projects', json('POST', { name })).then((r) => parse<ProjectData>(r))
+export const saveProject = (p: Project) => fetch(projectUrl(p.name), json('PUT', p)).then((r) => parse<Project>(r))
+export const renameProject = (name: string, newName: string) =>
+  fetch(`${projectUrl(name)}/rename`, json('POST', { name: newName })).then((r) => parse<Project>(r))
+export const deleteProject = async (name: string): Promise<true> => {
+  const res = await fetch(projectUrl(name), { method: 'DELETE' })
+  if (!res.ok) await parse(res)
+  return true
+}
+
+/** Stores the SVG in the project folder and returns the parsed drawing. */
+export function uploadProjectSvg(name: string, file: File): Promise<ProjectData> {
+  const body = new FormData()
+  body.append('file', file)
+  return fetch(`${projectUrl(name)}/svg`, { method: 'POST', body }).then((r) => parse<ProjectData>(r))
+}

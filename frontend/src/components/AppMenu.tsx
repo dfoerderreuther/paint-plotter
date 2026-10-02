@@ -1,6 +1,8 @@
 import { Button, Dropdown, Flex, type MenuProps } from 'antd'
 import {
   DownOutlined,
+  EditOutlined,
+  FolderAddOutlined,
   DownloadOutlined,
   FileAddOutlined,
   FileImageOutlined,
@@ -11,6 +13,9 @@ import {
 } from '@ant-design/icons'
 
 export type MenuAction =
+  | 'project-new'
+  | 'project-open'
+  | 'project-rename'
   | 'load-svg'
   | 'layout-new'
   | 'layout-open'
@@ -26,7 +31,17 @@ const MENUS: { label: string; items: Items }[] = [
   {
     label: 'File',
     items: [
-      { key: 'load-svg', label: 'Load SVG…', icon: <FileImageOutlined /> },
+      {
+        type: 'group',
+        label: 'Project',
+        children: [
+          { key: 'project-new', label: 'New project…', icon: <FolderAddOutlined /> },
+          { key: 'project-open', label: 'Open project…', icon: <FolderOpenOutlined /> },
+          { key: 'project-rename', label: 'Rename project…', icon: <EditOutlined /> },
+        ],
+      },
+      { type: 'divider' },
+      { key: 'load-svg', label: 'Load SVG into project…', icon: <FileImageOutlined /> },
       { type: 'divider' },
       {
         type: 'group',

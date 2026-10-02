@@ -78,6 +78,7 @@ class PaintRequest(BaseModel):
     # Drawing color → well id (None = don't paint).
     color_map: dict[str, str | None]
     settings: PaintSettings = PaintSettings()
+    project_name: str | None = None  # names the export zip
 
 
 class PaintFile(BaseModel):

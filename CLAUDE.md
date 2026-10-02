@@ -19,6 +19,7 @@ backend/                    Python (uv) – FastAPI app, vpype
   src/paint_plotter/wells.py   Well layouts: model, checks, palette arrange, pencil G-code, storage
   src/paint_plotter/gcode.py   GcodeWriter (Marlin, Z up/down, soft limits, ends parked)
   src/paint_plotter/colors.py  CIELAB ΔE color matching, POST /api/colors/match
+  src/paint_plotter/projects.py  Project folders: create/load/save/rename/delete, SVG upload
   src/paint_plotter/painting.py  Brush paths + G-code per well, POST /api/paint/plan and /export (zip)
   tests/                    pytest (tests/data/sample.svg = test drawing)
 config/plotter.json         Plotter config (work area, Z up/down, feed rates)
@@ -35,11 +36,14 @@ frontend/                   React + antd + TypeScript (Vite)
   src/colorMap.ts           Resolves the color → well mapping (choices + auto match)
   src/components/PaintPanel.tsx    Paint tab: brush/fill/dip settings, generate, run order, downloads
   src/components/ToolpathView.tsx  Brush paths on the bed at brush width
-  src/components/StatusBar.tsx      Bottom status bar
+  src/components/StatusBar.tsx      Bottom status bar (project + save state, colors, layout)
+  src/components/ProjectModals.tsx  New / rename (name dialog) and open-project table
   src/placement.ts          Drawing placement on the bed (offset + scale)
   src/components/WellsPanel.tsx  Wells tab: palette, wells table, selected-well editor
   src/components/WellsView.tsx   Palette page and wells on the bed
-projects/                   Saved paintings / well layouts (JSON), git-ignored
+data/                       git-ignored user data (see "Projects")
+  projects/<name>/          project.json + drawing.svg per project
+  well_layouts/<name>.json  reusable well layout library
 ```
 
 - **`./dev.sh`**: development mode. API with auto-reload on :8000 and the Vite dev server with
@@ -53,7 +57,7 @@ projects/                   Saved paintings / well layouts (JSON), git-ignored
 - Frontend checks: `cd frontend && npm run build && npm run lint`
 - Config path can be overridden with the env var `PAINT_PLOTTER_CONFIG`.
 - The config validator enforces the Z rule (`z.up > 1`, `z.down <= 0`).
-- Saved data goes to `projects/` (override with `PAINT_PLOTTER_DATA`; tests use a temp dir).
+- Saved data goes to `./data/` (override with `PAINT_PLOTTER_DATA`; tests use a temp dir).
 - `config/plotter.json` → `park`: where every G-code file ends (tool up).
 
 ## Concept
@@ -167,13 +171,32 @@ Brush cleaning between colors is also still being developed. Planned options:
 4. Put each paint onto its cross. **The brush picks up paint at the centre of the cross.**
 
 Wells can also be **circle** or **rect** outlines (any size) for physical cups or pans,
-edited by hand. Layouts are saved in `projects/well_layouts/<name>.json` and can be reused.
+edited by hand. Layouts can also be saved to the library `data/well_layouts/<name>.json` and reused.
 
 **No painting-area concept.** The user takes care of where the paper, the palette and the
 drawing lie, and an overlap between the palette and the drawing is **not** flagged.
 The app only checks: wells, cross labels and the palette page are inside the work area,
 wells are on the palette page, and wells are at least `margin_mm` (default 5) apart. For
 checking, a cross counts as a circle the size of the cross (the paint spot).
+
+## Projects
+
+- One folder per project: `data/projects/<name>/` with `project.json` and `drawing.svg`.
+  The folder name is `safe_name(name)`, and the real name is in `project.json`.
+- `project.json` holds the original SVG file name, placement, hidden layers, color choices,
+  paint settings and the **working well layout** (a copy; the layout library is separate), plus `updated`.
+- **Autosave:** the frontend PUTs the project about 0.8 s after any change. The status bar shows
+  Saved / Unsaved changes / Saving… / Save failed. Unsaved changes are detected by comparing the
+  project JSON with the last saved one.
+- **On start** the app opens the last project. Its name is in localStorage
+  (`paint-plotter.last-project`), the only thing kept in the browser. Otherwise it opens
+  **"default"**, creating it if needed.
+- **Naming:** while a project is called "default", the header tag is orange with a hint.
+  Loading an SVG into "default" opens Rename with the file name suggested.
+- File menu: New / Open (table, newest first, with delete) / Rename project, and Load SVG
+  into the project. Deleting the open project switches to "default".
+- An uploaded SVG is parsed before it is stored, so a broken file never replaces a good one.
+- The export zip is named after the project.
 
 ## Color mapping (drawing color → well)
 
@@ -185,7 +208,7 @@ checking, a cross counts as a circle the size of the cross (the paint spot).
 - Match quality tags: ΔE ≤ 2.3 exact, ≤ 10 close, ≤ 25 similar, else far.
 - "Preview in paint colors" draws the drawing on the bed in the assigned wells' colors
   and hides unpainted colors.
-- For now the mapping lives in frontend state only (not saved). It will be saved with projects.
+- The color choices are saved with the project.
 
 ## Painting (brush paths and G-code)
 
@@ -251,8 +274,7 @@ checking, a cross counts as a circle the size of the cross (the paint spot).
   warning** (vpype would otherwise silently turn them black).
 - Coordinates come back in mm with Y already flipped (origin bottom left of the SVG page).
   The placement on the bed (x, y = bottom left corner, uniform scale) is applied on top of that.
-- For now the SVG is not stored on the server. The frontend keeps it in memory, and saving
-  comes with projects.
+- The uploaded SVG is stored in the project folder (`drawing.svg`) and re-read on load.
 
 ## Defaults (can be changed later)
 
@@ -260,7 +282,7 @@ checking, a cross counts as a circle the size of the cross (the paint spot).
 - **SVG placement:** the drawing is scaled and positioned in the app inside the work area.
 - **Dipping:** move to the well's centre, lower the brush, optionally move it a little, lift.
   This is a menu option with parameters.
-- **Storage:** projects and well layouts are saved as JSON files in `projects/`. No database.
+- **Storage:** projects and well layouts are saved as files in `./data/`. No database.
 - **Python tooling:** `uv`. **Version control:** git.
 
 ## Domain terms

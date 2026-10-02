@@ -9,7 +9,9 @@ from pydantic import BaseModel
 from paint_plotter.colors import ColorMatch, match_colors
 from paint_plotter.config import REPO_ROOT, PlotterConfig, load_config
 from paint_plotter.gcode import GcodeError
+from paint_plotter import projects
 from paint_plotter.painting import PaintPlan, PaintRequest, plan_painting, steps_text
+from paint_plotter.projects import Project, ProjectData, ProjectError, ProjectInfo, ProjectNotFound
 from paint_plotter.svg_import import SvgDrawing, read_svg
 from paint_plotter.wells import (
     Rect,
@@ -150,12 +152,78 @@ def paint_export(req: PaintRequest) -> Response:
         for f in plan.files:
             zf.writestr(f.filename, f.gcode)
         zf.writestr("steps.txt", steps_text(plan, req.layout, pencil_name))
-    filename = f"painting_{safe_name(req.layout.name)}.zip"
+    filename = f"painting_{safe_name(req.project_name or req.layout.name)}.zip"
     return Response(
         buf.getvalue(),
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ---------------------------------------------------------------- projects
+
+
+def _project_call(fn, *args):
+    try:
+        return fn(*args)
+    except ProjectNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ProjectError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except ValueError as e:  # invalid name
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+class ProjectName(BaseModel):
+    name: str
+
+
+@app.get("/api/projects")
+def get_projects() -> list[ProjectInfo]:
+    return projects.list_projects()
+
+
+@app.post("/api/projects")
+def create_project(body: ProjectName) -> ProjectData:
+    return _project_call(projects.create, body.name.strip())
+
+
+@app.get("/api/projects/{name}")
+def get_project(name: str) -> ProjectData:
+    try:
+        return _project_call(projects.load, name)
+    except HTTPException:
+        raise
+    except Exception as e:  # stored SVG no longer readable
+        raise HTTPException(status_code=422, detail=f"Could not read the project's SVG: {e}") from e
+
+
+@app.put("/api/projects/{name}")
+def put_project(name: str, project: Project) -> Project:
+    if name != project.name:
+        raise HTTPException(status_code=400, detail="Name in URL and body differ")
+    return _project_call(projects.save, project)
+
+
+@app.delete("/api/projects/{name}", status_code=204)
+def delete_project(name: str) -> None:
+    _project_call(projects.delete, name)
+
+
+@app.post("/api/projects/{name}/rename")
+def rename_project(name: str, body: ProjectName) -> Project:
+    return _project_call(projects.rename, name, body.name.strip())
+
+
+@app.post("/api/projects/{name}/svg")
+async def upload_project_svg(name: str, file: UploadFile) -> ProjectData:
+    text = (await file.read()).decode("utf-8")
+    try:
+        return _project_call(projects.store_svg, name, file.filename or "drawing.svg", text)
+    except HTTPException:
+        raise
+    except Exception as e:  # svgelements/vpype raise many kinds of errors on bad input
+        raise HTTPException(status_code=422, detail=f"Could not read SVG: {e}") from e
 
 
 # Serve the built frontend (npm run build). In development, Vite serves it instead.
