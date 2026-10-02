@@ -1,5 +1,6 @@
 import {
   Alert,
+  App as AntApp,
   Button,
   Card,
   Flex,
@@ -13,8 +14,8 @@ import {
   Tooltip,
   Typography,
 } from 'antd'
-import { DownloadOutlined, FileZipOutlined, ThunderboltOutlined } from '@ant-design/icons'
-import { saveBlob, type PaintFile, type PaintPlan, type PaintSettings } from '../api'
+import { CopyOutlined, DownloadOutlined, FileZipOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { copyText, saveBlob, type PaintFile, type PaintPlan, type PaintSettings } from '../api'
 import { Swatch } from './DrawingPanel'
 
 interface PaintPanelProps {
@@ -28,12 +29,37 @@ interface PaintPanelProps {
   onGenerate: () => void
   onDownloadZip: () => void
   onDownloadPencil: () => void
+  /** Pencil G-code as text (for copying). */
+  getPencilGcode: () => Promise<string>
   hasWells: boolean
   showToolpaths: boolean
   onShowToolpathsChange: (v: boolean) => void
 }
 
 const minutes = (s: number) => (s < 60 ? `${s} s` : `${Math.ceil(s / 60)} min`)
+
+/** Download + copy-to-clipboard buttons for one G-code file (copy e.g. to paste into ncviewer.com). */
+function FileButtons({ label, onDownload, getText }: { label: string; onDownload: () => void; getText: () => Promise<string> }) {
+  const { message } = AntApp.useApp()
+  const copy = async () => {
+    try {
+      await copyText(await getText())
+      message.success(`Copied ${label} to the clipboard`)
+    } catch (e) {
+      message.error((e as Error).message)
+    }
+  }
+  return (
+    <Space.Compact style={{ alignSelf: 'flex-start' }}>
+      <Button size="small" icon={<DownloadOutlined />} onClick={onDownload}>
+        {label}
+      </Button>
+      <Tooltip title="Copy G-code (e.g. to paste into ncviewer.com)">
+        <Button size="small" icon={<CopyOutlined />} onClick={copy} />
+      </Tooltip>
+    </Space.Compact>
+  )
+}
 
 function FileStep({ f }: { f: PaintFile }) {
   return (
@@ -44,14 +70,11 @@ function FileStep({ f }: { f: PaintFile }) {
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         {f.dips} dips · {(f.paint_length_mm / 1000).toFixed(1)} m painted · ~{minutes(f.estimated_seconds)}
       </Typography.Text>
-      <Button
-        size="small"
-        icon={<DownloadOutlined />}
-        style={{ alignSelf: 'flex-start' }}
-        onClick={() => saveBlob(new Blob([f.gcode], { type: 'text/plain' }), f.filename)}
-      >
-        {f.filename}
-      </Button>
+      <FileButtons
+        label={f.filename}
+        onDownload={() => saveBlob(new Blob([f.gcode], { type: 'text/plain' }), f.filename)}
+        getText={async () => f.gcode}
+      />
     </Flex>
   )
 }
@@ -243,14 +266,7 @@ export default function PaintPanel(p: PaintPanelProps) {
                             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                               Lay the palette sheet on the bed, insert the pencil, run the file.
                             </Typography.Text>
-                            <Button
-                              size="small"
-                              icon={<DownloadOutlined />}
-                              style={{ alignSelf: 'flex-start' }}
-                              onClick={p.onDownloadPencil}
-                            >
-                              Pencil file
-                            </Button>
+                            <FileButtons label="Pencil file" onDownload={p.onDownloadPencil} getText={p.getPencilGcode} />
                           </Flex>
                         ),
                       },

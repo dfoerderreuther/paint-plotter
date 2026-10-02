@@ -214,6 +214,8 @@ checking, a cross counts as a circle the size of the cross (the paint spot).
 - **Dip motion:** `tap` (down, up at the well centre) or `circle` (down, one circle of
   `circle_radius_mm`, back to the centre, up).
 - Strokes are simplified to 0.05 mm, and moves outside the work area are refused (422 with message).
+- **Copy G-code:** each file in the run order (pencil too) has a copy button, for example to paste
+  into ncviewer.com for a preview. That site has no known API, so nothing is sent there automatically.
 - **Export zip:** `01_layout_<name>_pencil.gcode` (if there are wells), the brush files, and
   `steps.txt` (what to do before each file). The time estimate uses only lengths and feed rates.
 - Not yet: knockout of overlapping colors (paint under later shapes is not removed),

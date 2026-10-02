@@ -15,6 +15,7 @@ import {
   planPainting,
   saveWellLayout,
   uploadSvg,
+  wellLayoutGcodeText,
   type ColorMatch,
   type PaintPlan,
   type PaintRequest,
@@ -368,6 +369,7 @@ export default function App() {
                         onDownloadPencil={() =>
                           run(() => downloadWellLayoutGcode(layout), (f) => `Downloaded ${f}`)
                         }
+                        getPencilGcode={() => wellLayoutGcodeText(layout)}
                         hasWells={layout.wells.length > 0}
                         showToolpaths={showToolpaths}
                         onShowToolpathsChange={setShowToolpaths}

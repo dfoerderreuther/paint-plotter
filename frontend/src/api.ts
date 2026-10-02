@@ -115,6 +115,26 @@ async function downloadPost(url: string, body: unknown, fallback: string): Promi
   return filename
 }
 
+export const wellLayoutGcodeText = async (layout: WellLayout): Promise<string> => {
+  const res = await fetch('/api/well-layouts/gcode', json('POST', layout))
+  if (!res.ok) await parse(res)
+  return res.text()
+}
+
+/** Copies text to the clipboard (localhost counts as a secure context). */
+export async function copyText(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text)
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'
+  ta.style.opacity = '0'
+  document.body.appendChild(ta)
+  ta.select()
+  const ok = document.execCommand('copy')
+  ta.remove()
+  if (!ok) throw new Error('Copy to clipboard failed')
+}
+
 export const downloadWellLayoutGcode = (layout: WellLayout) =>
   downloadPost('/api/well-layouts/gcode', layout, 'layout.gcode')
 
