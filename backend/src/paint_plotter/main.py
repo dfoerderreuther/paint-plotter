@@ -5,11 +5,13 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from paint_plotter.colors import ColorMatch, match_colors
 from paint_plotter.config import REPO_ROOT, PlotterConfig, load_config
 from paint_plotter.gcode import GcodeError
 from paint_plotter.svg_import import SvgDrawing, read_svg
 from paint_plotter.wells import (
     Rect,
+    Well,
     WellLayout,
     arrange_palette,
     check_layout,
@@ -106,6 +108,16 @@ def well_layout_gcode(layout: WellLayout) -> PlainTextResponse:
         raise HTTPException(status_code=422, detail=str(e)) from e
     filename = f"01_layout_{safe_name(layout.name)}_pencil.gcode"
     return PlainTextResponse(gcode, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+class ColorMatchRequest(BaseModel):
+    colors: list[str]
+    wells: list[Well]
+
+
+@app.post("/api/colors/match")
+def colors_match(req: ColorMatchRequest) -> list[ColorMatch]:
+    return match_colors(req.colors, req.wells)
 
 
 # Serve the built frontend (npm run build). In development, Vite serves it instead.

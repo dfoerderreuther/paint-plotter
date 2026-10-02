@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, App as AntApp, Flex, Layout, Spin, Tabs, Tag, Typography } from 'antd'
-import { BgColorsOutlined, PictureOutlined } from '@ant-design/icons'
+import { BgColorsOutlined, NodeIndexOutlined, PictureOutlined } from '@ant-design/icons'
 import {
   arrangeWellLayout,
   checkWellLayout,
@@ -9,15 +9,19 @@ import {
   fetchConfig,
   getWellLayout,
   listWellLayouts,
+  matchColors,
   saveWellLayout,
   uploadSvg,
+  type ColorMatch,
   type PlotterConfig,
   type Rect,
   type SvgDrawing,
   type WellLayout,
 } from './api'
+import { resolveColorMap, type ColorChoices } from './colorMap'
 import AppMenu, { type MenuAction } from './components/AppMenu'
 import Bed from './components/Bed'
+import ColorsPanel from './components/ColorsPanel'
 import DrawingPanel from './components/DrawingPanel'
 import DrawingView from './components/DrawingView'
 import LoadSvgModal from './components/LoadSvgModal'
@@ -33,7 +37,7 @@ const { Header, Sider, Content } = Layout
 const newLayout = (): WellLayout => ({ name: 'untitled', palette: null, margin_mm: 5, wells: [] })
 
 type Dialog = 'load-svg' | 'layout-open' | 'layout-save-as' | 'plotter' | null
-type PanelTab = 'drawing' | 'wells'
+type PanelTab = 'drawing' | 'wells' | 'colors'
 
 export default function App() {
   const { message } = AntApp.useApp()
@@ -56,6 +60,11 @@ export default function App() {
   const [layoutWarnings, setLayoutWarnings] = useState<string[]>([])
   const [selectedWell, setSelectedWell] = useState<string | null>(null)
 
+  // Color → well mapping
+  const [colorChoices, setColorChoices] = useState<ColorChoices>({})
+  const [colorMatches, setColorMatches] = useState<ColorMatch[]>([])
+  const [previewPaint, setPreviewPaint] = useState(false)
+
   const layoutDirty = cleanJson !== JSON.stringify(layout)
 
   useEffect(() => {
@@ -75,6 +84,21 @@ export default function App() {
   }, [layout])
 
   const drawingColors = useMemo(() => [...new Set(drawing?.layers.map((l) => l.color) ?? [])], [drawing])
+
+  // Distances from every drawing color to every well (for auto-matching and the dropdowns).
+  useEffect(() => {
+    if (drawingColors.length === 0) return
+    const t = setTimeout(() => {
+      matchColors(drawingColors, layout.wells).then(setColorMatches, () => {})
+    }, 250)
+    return () => clearTimeout(t)
+  }, [drawingColors, layout.wells])
+
+  const colorMap = useMemo(
+    () => resolveColorMap(drawingColors, colorChoices, colorMatches, layout.wells),
+    [drawingColors, colorChoices, colorMatches, layout.wells],
+  )
+  const wellColor = useMemo(() => new Map(layout.wells.map((w) => [w.id, w.color])), [layout.wells])
   const bed: Rect | null = config && {
     x: 0,
     y: 0,
@@ -100,6 +124,8 @@ export default function App() {
     setFileName(file.name)
     setPlacement(DEFAULT_PLACEMENT)
     setHidden(new Set())
+    setColorChoices({})
+    setColorMatches([])
     setTab('drawing')
     return true
   }
@@ -220,6 +246,26 @@ export default function App() {
                   ),
                 },
                 {
+                  key: 'colors',
+                  label: 'Colors',
+                  icon: <NodeIndexOutlined />,
+                  children: (
+                    <div style={{ paddingInline: 12 }}>
+                      <ColorsPanel
+                        colors={drawingColors}
+                        layers={drawing?.layers ?? []}
+                        wells={layout.wells}
+                        matches={colorMatches}
+                        choices={colorChoices}
+                        onChoicesChange={setColorChoices}
+                        resolved={colorMap}
+                        previewPaint={previewPaint}
+                        onPreviewPaintChange={setPreviewPaint}
+                      />
+                    </div>
+                  ),
+                },
+                {
                   key: 'wells',
                   label: 'Wells',
                   icon: <BgColorsOutlined />,
@@ -251,7 +297,21 @@ export default function App() {
             <div style={{ position: 'absolute', inset: 16 }}>
               <Bed widthMm={config.work_area.width_mm} heightMm={config.work_area.height_mm}>
                 <WellsView layout={layout} selectedId={selectedWell} onSelect={selectWell} />
-                {drawing && <DrawingView drawing={drawing} placement={placement} hidden={hidden} />}
+                {drawing && (
+                  <DrawingView
+                    drawing={drawing}
+                    placement={placement}
+                    hidden={hidden}
+                    colorFor={
+                      previewPaint
+                        ? (l) => {
+                            const id = colorMap[l.color]
+                            return id ? (wellColor.get(id) ?? null) : null
+                          }
+                        : undefined
+                    }
+                  />
+                )}
               </Bed>
             </div>
           )}
@@ -264,6 +324,7 @@ export default function App() {
         layoutName={layout.name}
         layoutDirty={layoutDirty}
         warningCount={layoutWarnings.length}
+        colorsAssigned={drawing ? [drawingColors.filter((c) => colorMap[c]).length, drawingColors.length] : null}
         workArea={config ? `${config.work_area.width_mm} × ${config.work_area.height_mm} mm` : '–'}
       />
 

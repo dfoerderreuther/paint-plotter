@@ -18,6 +18,7 @@ backend/                    Python (uv) – FastAPI app, vpype
   src/paint_plotter/svg_import.py  SVG → paint layers (vpype), POST /api/svg
   src/paint_plotter/wells.py   Well layouts: model, checks, palette arrange, pencil G-code, storage
   src/paint_plotter/gcode.py   GcodeWriter (Marlin, Z up/down, soft limits, ends parked)
+  src/paint_plotter/colors.py  CIELAB ΔE color matching, POST /api/colors/match
   tests/                    pytest (tests/data/sample.svg = test drawing)
 config/plotter.json         Plotter config (work area, Z up/down, feed rates)
 frontend/                   React + antd + TypeScript (Vite)
@@ -29,6 +30,8 @@ frontend/                   React + antd + TypeScript (Vite)
   src/components/LoadSvgModal.tsx  SVG upload modal
   src/components/LayoutModals.tsx  Open / Save-as well layout modals
   src/components/PlotterDrawer.tsx Plotter settings drawer (read-only)
+  src/components/ColorsPanel.tsx   Colors tab: drawing color → well mapping, paint preview
+  src/colorMap.ts           Resolves the color → well mapping (choices + auto match)
   src/components/StatusBar.tsx      Bottom status bar
   src/placement.ts          Drawing placement on the bed (offset + scale)
   src/components/WellsPanel.tsx  Wells tab: palette, wells table, selected-well editor
@@ -169,6 +172,18 @@ The app only checks: wells, cross labels and the palette page are inside the wor
 wells are on the palette page, and wells are at least `margin_mm` (default 5) apart. For
 checking, a cross counts as a circle the size of the cross (the paint spot).
 
+## Color mapping (drawing color → well)
+
+- Mapping is **per drawing color** (a color's fill and line layers share one well).
+- The backend gives the CIE76 ΔE (CIELAB, D65) from every drawing color to every well.
+  **Auto** = the closest well. The user can pick a specific well, or **"Don't paint"**.
+- Explicit choices are kept. A choice pointing to a deleted well falls back to Auto.
+  Loading a new SVG resets the choices.
+- Match quality tags: ΔE ≤ 2.3 exact, ≤ 10 close, ≤ 25 similar, else far.
+- "Preview in paint colors" draws the drawing on the bed in the assigned wells' colors
+  and hides unpainted colors.
+- For now the mapping lives in frontend state only (not saved). It will be saved with projects.
+
 ## UI conventions
 
 - **antd 6** components throughout: the header menu bar uses click-triggered `Dropdown`s
@@ -221,7 +236,7 @@ checking, a cross counts as a circle the size of the cross (the paint spot).
 1. ✅ Project setup: Python API and web frontend, both running locally
 2. ✅ SVG upload and visualization
 3. ✅ Wells: palette page with crosses (auto-arranged), saved layouts, pencil "well layout" G-code
-4. Color mapping from SVG colors to reference areas
+4. ✅ Color mapping from SVG colors to wells (Colors tab)
 5. Toolpath planning: fill pattern, brush size, reloading after N mm of painting
 6. G-code generation, with several files per painting
 7. Preview and simulation of the G-code

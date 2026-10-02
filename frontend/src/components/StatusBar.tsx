@@ -6,6 +6,8 @@ interface StatusBarProps {
   layoutName: string
   layoutDirty: boolean
   warningCount: number
+  /** [assigned, total] drawing colors, or null without a drawing. */
+  colorsAssigned: [number, number] | null
   workArea: string
 }
 
@@ -20,6 +22,19 @@ export default function StatusBar(p: StatusBarProps) {
         {p.layoutDirty && ' (unsaved)'}
       </Typography.Text>
       <Divider orientation="vertical" />
+      {p.colorsAssigned && (
+        <>
+          <Badge
+            status={p.colorsAssigned[0] === p.colorsAssigned[1] ? 'success' : 'warning'}
+            text={
+              <Typography.Text {...text}>
+                {p.colorsAssigned[0]}/{p.colorsAssigned[1]} colors assigned
+              </Typography.Text>
+            }
+          />
+          <Divider orientation="vertical" />
+        </>
+      )}
       {p.warningCount > 0 ? (
         <Badge status="warning" text={<Typography.Text {...text}>{p.warningCount} layout warnings</Typography.Text>} />
       ) : (

@@ -109,3 +109,13 @@ export async function downloadWellLayoutGcode(layout: WellLayout): Promise<strin
   URL.revokeObjectURL(url)
   return filename
 }
+
+export interface ColorMatch {
+  color: string
+  best_well_id: string | null
+  /** CIE76 ΔE from the color to each well, by well id. */
+  distances: Record<string, number>
+}
+
+export const matchColors = (colors: string[], wells: Well[]) =>
+  fetch('/api/colors/match', json('POST', { colors, wells })).then((r) => parse<ColorMatch[]>(r))
