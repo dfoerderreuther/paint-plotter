@@ -1,10 +1,9 @@
 """Paint wells and well layouts.
 
-A well layout is a reusable arrangement of wells plus the painting area. It is plotted
-with a pencil on paper so the physical wells can be placed on the outlines.
+A well layout is a reusable arrangement of wells. It is plotted with a pencil on paper so
+the paint (or physical wells) can be placed on the marks.
 
-Default workflow: an A4 palette page lies in the corner diagonally opposite the painting
-area. The pencil draws one cross per color on it, evenly spaced (see `arrange_palette`).
+Default workflow: an A4 palette page lies in the corner diagonally opposite the drawing. The pencil draws one cross per color on it, evenly spaced (see `arrange_palette`).
 
 Well shapes:
 - cross: a pencil cross on a palette paper. The paint is dabbed onto the cross and the
@@ -18,7 +17,6 @@ import re
 from pathlib import Path
 from typing import Literal
 
-import numpy as np
 import vpype as vp
 from pydantic import BaseModel, Field
 from shapely.geometry import Point as ShapelyPoint
@@ -58,13 +56,10 @@ A4_MM = (210.0, 297.0)
 
 class WellLayout(BaseModel):
     name: str = Field(min_length=1)
-    painting_area: Rect
     # Separate sheet the paint crosses are drawn on (None = wells anywhere on the bed).
     palette: Rect | None = None
-    # Minimum gap between wells, and between wells and the painting area.
+    # Minimum gap between wells.
     margin_mm: float = Field(default=5, ge=0)
-    # Also draw the painting area outline and registration marks in the pencil file.
-    draw_painting_area: bool = True
     wells: list[Well] = []
 
 
@@ -102,19 +97,12 @@ def check_layout(layout: WellLayout, config: PlotterConfig) -> list[str]:
     """Problems with the layout, as human-readable warnings (empty = OK)."""
     warnings: list[str] = []
     bed = box(0, 0, config.work_area.width_mm, config.work_area.height_mm)
-    pa = layout.painting_area
-    area = box(pa.x, pa.y, pa.x + pa.width_mm, pa.y + pa.height_mm)
-    if not bed.contains(area):
-        warnings.append("Painting area is outside the work area")
-
     palette = None
     if layout.palette:
         p = layout.palette
         palette = box(p.x, p.y, p.x + p.width_mm, p.y + p.height_mm)
         if not bed.contains(palette):
             warnings.append("Palette page is outside the work area")
-        if palette.intersects(area):
-            warnings.append("Palette page overlaps the painting area")
 
     shapes = [(w, well_shape(w)) for w in layout.wells]
     for w, s in shapes:
@@ -124,8 +112,6 @@ def check_layout(layout: WellLayout, config: PlotterConfig) -> list[str]:
             warnings.append(f"Label of well '{w.name}' is outside the work area")
         if palette is not None and not palette.contains(s):
             warnings.append(f"Well '{w.name}' is not on the palette page")
-        if s.distance(area) < layout.margin_mm:
-            warnings.append(f"Well '{w.name}' is closer than {layout.margin_mm:g} mm to the painting area")
     for i, (a, sa) in enumerate(shapes):
         for b, sb in shapes[i + 1 :]:
             if sa.distance(sb) < layout.margin_mm:
@@ -136,7 +122,6 @@ def check_layout(layout: WellLayout, config: PlotterConfig) -> list[str]:
 # ---------------------------------------------------------------- pencil G-code
 
 
-REGISTRATION_MARK_MM = 10
 LABEL_SIZE_MM = (2.0, 6.0)  # min / max text size
 CROSS_LABEL_SIZE_MM = 4.0
 CROSS_LABEL_GAP_MM = 2.0
@@ -171,30 +156,8 @@ def label_bounds(well: Well) -> tuple[float, float, float, float] | None:
     return min(xs), min(ys), max(xs), max(ys)
 
 
-def _registration_marks(layout: WellLayout, config: PlotterConfig) -> list[list[Point]]:
-    """A cross at each corner of the painting area, clipped to the work area."""
-    pa = layout.painting_area
-    s = REGISTRATION_MARK_MM / 2
-    bed_w, bed_h = config.work_area.width_mm, config.work_area.height_mm
-    marks = []
-    for cx, cy in [(pa.x, pa.y), (pa.x + pa.width_mm, pa.y), (pa.x + pa.width_mm, pa.y + pa.height_mm), (pa.x, pa.y + pa.height_mm)]:
-        h = (np.clip(cx - s, 0, bed_w), np.clip(cx + s, 0, bed_w))
-        v = (np.clip(cy - s, 0, bed_h), np.clip(cy + s, 0, bed_h))
-        if 0 <= cy <= bed_h and h[1] > h[0]:
-            marks.append([(float(h[0]), cy), (float(h[1]), cy)])
-        if 0 <= cx <= bed_w and v[1] > v[0]:
-            marks.append([(cx, float(v[0])), (cx, float(v[1]))])
-    return marks
-
-
 def layout_gcode(layout: WellLayout, config: PlotterConfig) -> str:
     g = GcodeWriter(config, f"well layout '{layout.name}'", tool="pencil")
-    if layout.draw_painting_area:
-        pa = layout.painting_area
-        g.comment("painting area")
-        g.polyline(_rect_outline(pa.x, pa.y, pa.width_mm, pa.height_mm))
-        g.comment("registration marks")
-        g.polylines(_registration_marks(layout, config))
     for well in layout.wells:
         g.comment(f"well '{well.name}' {well.color}")
         g.polylines(well_outlines(well))
@@ -209,20 +172,24 @@ CROSS_SIZE_MM = 15.0
 
 
 def arrange_palette(
-    layout: WellLayout, colors: list[str], config: PlotterConfig, page_mm: tuple[float, float] = A4_MM
+    layout: WellLayout,
+    colors: list[str],
+    config: PlotterConfig,
+    drawing: Rect | None = None,
+    page_mm: tuple[float, float] = A4_MM,
 ) -> WellLayout:
-    """Put a palette page in the bed corner diagonally opposite the painting area and
-    place one cross per color evenly on it. Returns a new layout."""
+    """Put a palette page in the bed corner diagonally opposite the drawing (top right
+    if there is none) and place one cross per color evenly on it. Returns a new layout."""
     bed_w, bed_h = config.work_area.width_mm, config.work_area.height_mm
-    pa = layout.painting_area
-    area = box(pa.x, pa.y, pa.x + pa.width_mm, pa.y + pa.height_mm)
-    right = pa.x + pa.width_mm / 2 < bed_w / 2
-    top = pa.y + pa.height_mm / 2 < bed_h / 2
+    d = drawing or Rect(x=0, y=0, width_mm=1, height_mm=1)
+    area = box(d.x, d.y, d.x + d.width_mm, d.y + d.height_mm)
+    right = d.x + d.width_mm / 2 < bed_w / 2
+    top = d.y + d.height_mm / 2 < bed_h / 2
 
     def page(w: float, h: float) -> Rect:
         return Rect(x=bed_w - w if right else 0, y=bed_h - h if top else 0, width_mm=w, height_mm=h)
 
-    # Portrait unless only landscape stays clear of the painting area.
+    # Portrait unless only landscape stays clear of the drawing.
     pw, ph = page_mm
     candidates = [page(pw, ph), page(ph, pw)]
     palette = min(

@@ -9,6 +9,7 @@ from paint_plotter.config import REPO_ROOT, PlotterConfig, load_config
 from paint_plotter.gcode import GcodeError
 from paint_plotter.svg_import import SvgDrawing, read_svg
 from paint_plotter.wells import (
+    Rect,
     WellLayout,
     arrange_palette,
     check_layout,
@@ -88,11 +89,13 @@ def check_well_layout(layout: WellLayout) -> LayoutCheck:
 class ArrangeRequest(BaseModel):
     layout: WellLayout
     colors: list[str]
+    # Placed drawing on the bed; the palette goes into the opposite corner.
+    drawing: Rect | None = None
 
 
 @app.post("/api/well-layouts/arrange")
 def arrange_well_layout(req: ArrangeRequest) -> WellLayout:
-    return arrange_palette(req.layout, req.colors, load_config())
+    return arrange_palette(req.layout, req.colors, load_config(), req.drawing)
 
 
 @app.post("/api/well-layouts/gcode", response_class=PlainTextResponse)

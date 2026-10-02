@@ -26,8 +26,8 @@ frontend/                   React + antd + TypeScript (Vite)
   src/components/DrawingView.tsx   Draws the paint layers on the bed
   src/components/DrawingPanel.tsx  Upload, placement, layer list
   src/placement.ts          Drawing placement on the bed (offset + scale)
-  src/components/WellsPanel.tsx  Wells tab: layouts, painting area, palette, wells, pencil G-code
-  src/components/WellsView.tsx   Painting area, palette page and wells on the bed
+  src/components/WellsPanel.tsx  Wells tab: layouts, palette, wells, pencil G-code
+  src/components/WellsView.tsx   Palette page and wells on the bed
 projects/                   Saved paintings / well layouts (JSON), git-ignored
 ```
 
@@ -144,24 +144,25 @@ Brush cleaning between colors is also still being developed. Planned options:
 
 **Current default: a palette page with crosses.**
 
-1. Place the drawing and set the **painting area** (Wells tab → "Use drawing bounds" or enter it).
-2. **"Arrange crosses from drawing"** puts an **A4 palette page** (portrait, or landscape if
-   that one stays clear of the painting area) in the bed corner **diagonally opposite the
-   painting area**. One **cross per drawing color** is spaced evenly on it, labelled
-   "<n> <hex>" to the right of the cross. That way you can refill paint while the plotter
-   paints elsewhere. The plotter is CoreXY.
+1. Load and place the drawing.
+2. **"Arrange crosses from drawing"** (Wells tab) puts an **A4 palette page** in the bed
+   corner **diagonally opposite the placed drawing** (top right if no drawing is loaded).
+   It is portrait, or landscape if only landscape stays clear of the drawing. One
+   **cross per drawing color** is spaced evenly on it, labelled "<n> <hex>" to the right
+   of the cross. That way you can refill paint while the plotter paints elsewhere. The
+   plotter is CoreXY.
 3. Lay the A4 sheet on the bed and run the **pencil G-code** (`01_layout_<name>_pencil.gcode`).
-   It draws the crosses and labels, plus the painting area outline and registration
-   marks (crosses at its corners) if that option is ticked.
+   It draws only the crosses and their labels.
 4. Put each paint onto its cross. **The brush picks up paint at the centre of the cross.**
 
 Wells can also be **circle** or **rect** outlines (any size) for physical cups or pans,
 edited by hand. Layouts are saved in `projects/well_layouts/<name>.json` and can be reused.
 
-Checks (shown live as warnings): wells and palette page inside the work area, cross labels
-inside the work area, wells on the palette page, palette page not overlapping the painting
-area, and at least `margin_mm` (default 5) between wells, and between wells and the painting
-area. For checking, a cross counts as a circle the size of the cross (the paint spot).
+**No painting-area concept.** The user takes care of where the paper, the palette and the
+drawing lie, and an overlap between the palette and the drawing is **not** flagged.
+The app only checks: wells, cross labels and the palette page are inside the work area,
+wells are on the palette page, and wells are at least `margin_mm` (default 5) apart. For
+checking, a cross counts as a circle the size of the cross (the paint spot).
 
 ## SVG import (how it works)
 
@@ -180,7 +181,7 @@ area. For checking, a cross counts as a circle the size of the cross (the paint 
 ## Defaults (can be changed later)
 
 - **Feed rates:** separate speeds for travel (brush up) and painting (brush down), set in `config/plotter.json`.
-- **SVG placement:** the drawing is scaled and positioned in the app inside the painting area.
+- **SVG placement:** the drawing is scaled and positioned in the app inside the work area.
 - **Dipping:** move to the well's centre, lower the brush, optionally move it a little, lift.
   This is a menu option with parameters.
 - **Storage:** projects and well layouts are saved as JSON files in `projects/`. No database.

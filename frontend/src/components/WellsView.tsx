@@ -47,10 +47,9 @@ function WellMark({ well }: { well: Well }) {
   )
 }
 
-/** Painting area, palette page and wells, in machine coordinates (place inside <Bed>). */
+/** Palette page and wells, in machine coordinates (place inside <Bed>). */
 export default function WellsView({ layout }: { layout: WellLayout }) {
   const { token } = theme.useToken()
-  const pa = layout.painting_area
   const pal = layout.palette
   return (
     <g>
@@ -64,16 +63,6 @@ export default function WellsView({ layout }: { layout: WellLayout }) {
           stroke={token.colorBorder}
         />
       )}
-      <rect
-        x={pa.x}
-        y={pa.y}
-        width={pa.width_mm}
-        height={pa.height_mm}
-        fill="none"
-        stroke={token.colorPrimary}
-        strokeDasharray="6 4"
-        strokeWidth={0.8}
-      />
       {layout.wells.map((w) => (
         <WellMark key={w.id} well={w} />
       ))}

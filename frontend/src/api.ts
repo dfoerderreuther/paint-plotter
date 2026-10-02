@@ -52,10 +52,8 @@ export interface Well {
 
 export interface WellLayout {
   name: string
-  painting_area: Rect
   palette: Rect | null
   margin_mm: number
-  draw_painting_area: boolean
   wells: Well[]
 }
 
@@ -93,8 +91,9 @@ export const deleteWellLayout = async (name: string) => {
 }
 export const checkWellLayout = (layout: WellLayout) =>
   fetch('/api/well-layouts/check', json('POST', layout)).then((r) => parse<{ warnings: string[] }>(r))
-export const arrangeWellLayout = (layout: WellLayout, colors: string[]) =>
-  fetch('/api/well-layouts/arrange', json('POST', { layout, colors })).then((r) => parse<WellLayout>(r))
+/** Palette page in the corner opposite the placed drawing, one cross per color. */
+export const arrangeWellLayout = (layout: WellLayout, colors: string[], drawing: Rect | null) =>
+  fetch('/api/well-layouts/arrange', json('POST', { layout, colors, drawing })).then((r) => parse<WellLayout>(r))
 
 /** Fetches a G-code file and hands it to the browser as a download. */
 export async function downloadWellLayoutGcode(layout: WellLayout): Promise<string> {

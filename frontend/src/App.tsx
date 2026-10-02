@@ -19,10 +19,8 @@ const { Header, Sider, Content } = Layout
 
 const DEFAULT_LAYOUT: WellLayout = {
   name: 'default',
-  painting_area: { x: 0, y: 0, width_mm: 280, height_mm: 280 },
   palette: null,
   margin_mm: 5,
-  draw_painting_area: true,
   wells: [],
 }
 
@@ -63,7 +61,7 @@ export default function App() {
       const d = await uploadSvg(file)
       setDrawing(d)
       setFileName(file.name)
-      setPlacement({ ...DEFAULT_PLACEMENT, x: layout.painting_area.x, y: layout.painting_area.y })
+      setPlacement(DEFAULT_PLACEMENT)
       setHidden(new Set())
     } catch (e) {
       message.error((e as Error).message)
@@ -106,7 +104,7 @@ export default function App() {
                         onPlacementChange={setPlacement}
                         hidden={hidden}
                         onToggleLayer={toggleLayer}
-                        area={layout.painting_area}
+                        area={{ x: 0, y: 0, width_mm: config.work_area.width_mm, height_mm: config.work_area.height_mm }}
                       />
                     ),
                   },

@@ -12,7 +12,7 @@ interface DrawingPanelProps {
   onPlacementChange: (p: Placement) => void
   hidden: Set<string>
   onToggleLayer: (id: string, visible: boolean) => void
-  /** Where the drawing has to fit (the painting area). */
+  /** Where the drawing has to fit (the work area). */
   area: Rect
 }
 
@@ -91,11 +91,11 @@ export default function DrawingPanel(props: DrawingPanelProps) {
               <Button
                 onClick={() => onPlacementChange(centered(drawing, fitScale(drawing, area), area))}
               >
-                Fit to painting area
+                Fit to bed
               </Button>
             </Space>
             {!rectInside(placed, area) && (
-              <Alert style={{ marginTop: 8 }} type="error" showIcon message="Drawing is outside the painting area" />
+              <Alert style={{ marginTop: 8 }} type="error" showIcon message="Drawing is outside the work area" />
             )}
           </div>
 

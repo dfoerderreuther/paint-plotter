@@ -15,7 +15,6 @@ CONFIG = load_config()
 def make_layout(**kw) -> WellLayout:
     data = dict(
         name="Studio A",
-        painting_area=Rect(x=0, y=100, width_mm=500, height_mm=400),
         wells=[
             Well(id="1", name="Red", color="#ff0000", shape="circle", x=40, y=40, width_mm=50, height_mm=50),
             Well(id="2", name="Blue", color="#0000ff", shape="rect", x=150, y=40, width_mm=60, height_mm=40),
@@ -40,12 +39,6 @@ def test_well_outside_bed():
     layout = make_layout()
     layout.wells[0].x = 10  # circle radius 25 sticks out on the left
     assert any("outside the work area" in w for w in check_layout(layout, CONFIG))
-
-
-def test_well_too_close_to_painting_area():
-    layout = make_layout()
-    layout.wells[0].y = 72  # top of circle at 97, painting area starts at 100, margin 5
-    assert any("painting area" in w for w in check_layout(layout, CONFIG))
 
 
 def test_wells_too_close_to_each_other():
@@ -97,7 +90,7 @@ def test_layout_gcode_stays_in_work_area_and_draws_everything():
     gcode = layout_gcode(make_layout(), CONFIG)
     pts = coords(gcode)
     assert all(0 <= x <= 500 and 0 <= y <= 500 for x, y in pts)
-    assert "; painting area" in gcode
+    assert "painting area" not in gcode
     assert "; well 'Red' #ff0000" in gcode
     assert "; well 'Blue' #0000ff" in gcode
     # circle outline: some point at distance r = 25 from the centre (40, 40)
@@ -144,26 +137,35 @@ def test_gcode_endpoint_rejects_out_of_bounds():
 COLORS = ["#ff0000", "#00aa00", "#0000ff", "#ffcc00", "#000000"]
 
 
-def test_arrange_puts_palette_in_opposite_corner():
-    layout = make_layout(painting_area=Rect(x=0, y=0, width_mm=280, height_mm=200), wells=[])
-    out = arrange_palette(layout, COLORS, CONFIG)
+DRAWING_BOTTOM_LEFT = Rect(x=0, y=0, width_mm=280, height_mm=200)
+
+
+def test_arrange_puts_palette_in_corner_opposite_the_drawing():
+    out = arrange_palette(make_layout(wells=[]), COLORS, CONFIG, DRAWING_BOTTOM_LEFT)
     assert out.palette.x + out.palette.width_mm == 500  # right edge
     assert out.palette.y + out.palette.height_mm == 500  # top edge
     assert check_layout(out, CONFIG) == []
 
 
 def test_arrange_one_cross_per_color_inside_page():
-    layout = make_layout(painting_area=Rect(x=220, y=210, width_mm=280, height_mm=290), wells=[])
-    out = arrange_palette(layout, COLORS, CONFIG)
-    assert (out.palette.x, out.palette.y) == (0, 0)  # painting area top right → palette bottom left
+    drawing = Rect(x=220, y=210, width_mm=280, height_mm=290)  # top right
+    out = arrange_palette(make_layout(wells=[]), COLORS, CONFIG, drawing)
+    assert (out.palette.x, out.palette.y) == (0, 0)
     assert [w.color for w in out.wells] == COLORS
     assert all(w.shape == "cross" for w in out.wells)
     assert len({(w.x, w.y) for w in out.wells}) == len(COLORS)
     assert check_layout(out, CONFIG) == []
 
 
+def test_arrange_without_drawing_uses_top_right():
+    out = arrange_palette(make_layout(wells=[]), COLORS, CONFIG)
+    assert (out.palette.x + out.palette.width_mm, out.palette.y + out.palette.height_mm) == (500, 500)
+
+
 def test_arrange_endpoint():
-    layout = make_layout(painting_area=Rect(x=0, y=0, width_mm=280, height_mm=200), wells=[])
-    res = client.post("/api/well-layouts/arrange", json={"layout": layout.model_dump(), "colors": COLORS})
+    res = client.post(
+        "/api/well-layouts/arrange",
+        json={"layout": make_layout(wells=[]).model_dump(), "colors": COLORS, "drawing": DRAWING_BOTTOM_LEFT.model_dump()},
+    )
     assert res.status_code == 200
     assert len(res.json()["wells"]) == 5

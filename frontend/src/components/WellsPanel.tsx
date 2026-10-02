@@ -3,7 +3,6 @@ import {
   Alert,
   App as AntApp,
   Button,
-  Checkbox,
   ColorPicker,
   Flex,
   Input,
@@ -129,7 +128,7 @@ export default function WellsPanel({ layout, onChange, warnings, drawingColors, 
 
   const updateWell = (w: Well) => onChange({ ...layout, wells: layout.wells.map((x) => (x.id === w.id ? w : x)) })
   const addWell = () => {
-    const base = layout.palette ?? layout.painting_area
+    const base = layout.palette ?? { x: 0, y: 0, width_mm: 100, height_mm: 100 }
     onChange({
       ...layout,
       wells: [
@@ -181,39 +180,16 @@ export default function WellsPanel({ layout, onChange, warnings, drawingColors, 
       </div>
 
       <div>
-        <Typography.Title level={5}>Painting area</Typography.Title>
-        <RectInputs rect={layout.painting_area} onChange={(r) => onChange({ ...layout, painting_area: r })} />
-        <Button
-          style={{ marginTop: 8 }}
-          disabled={!drawingRect}
-          onClick={() =>
-            drawingRect &&
-            onChange({
-              ...layout,
-              painting_area: {
-                x: Math.round(drawingRect.x * 100) / 100,
-                y: Math.round(drawingRect.y * 100) / 100,
-                width_mm: Math.round(drawingRect.width_mm * 100) / 100,
-                height_mm: Math.round(drawingRect.height_mm * 100) / 100,
-              },
-            })
-          }
-        >
-          Use drawing bounds
-        </Button>
-      </div>
-
-      <div>
         <Typography.Title level={5}>Palette page</Typography.Title>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-          A4 sheet in the corner diagonally opposite the painting area, with one cross per drawing color.
+          A4 sheet in the corner diagonally opposite the drawing, with one cross per drawing color.
         </Typography.Paragraph>
         <Space wrap>
           <Button
             type="primary"
             disabled={drawingColors.length === 0}
             onClick={() =>
-              run(() => arrangeWellLayout(layout, drawingColors), (l) => `Arranged ${l.wells.length} crosses`).then(
+              run(() => arrangeWellLayout(layout, drawingColors, drawingRect), (l) => `Arranged ${l.wells.length} crosses`).then(
                 (l) => l && onChange(l),
               )
             }
@@ -259,20 +235,12 @@ export default function WellsPanel({ layout, onChange, warnings, drawingColors, 
 
       <div>
         <Typography.Title level={5}>Pencil G-code</Typography.Title>
-        <Flex vertical gap={8}>
-          <Checkbox
-            checked={layout.draw_painting_area}
-            onChange={(e) => onChange({ ...layout, draw_painting_area: e.target.checked })}
-          >
-            Also draw painting area and registration marks
-          </Checkbox>
-          <Button
-            icon={<DownloadOutlined />}
-            onClick={() => run(() => downloadWellLayoutGcode(layout), (f) => `Downloaded ${f}`)}
-          >
-            Download pencil G-code
-          </Button>
-        </Flex>
+        <Button
+          icon={<DownloadOutlined />}
+          onClick={() => run(() => downloadWellLayoutGcode(layout), (f) => `Downloaded ${f}`)}
+        >
+          Download pencil G-code
+        </Button>
       </div>
     </Flex>
   )
