@@ -47,8 +47,33 @@ function WellMark({ well }: { well: Well }) {
   )
 }
 
+/** Selection ring around a well (the paint spot for crosses). */
+function Highlight({ well, color }: { well: Well; color: string }) {
+  const pad = 3
+  if (well.shape === 'rect') {
+    return (
+      <rect
+        x={well.x - well.width_mm / 2 - pad}
+        y={well.y - well.height_mm / 2 - pad}
+        width={well.width_mm + 2 * pad}
+        height={well.height_mm + 2 * pad}
+        fill="none"
+        stroke={color}
+        strokeWidth={1.5}
+      />
+    )
+  }
+  return <circle cx={well.x} cy={well.y} r={well.width_mm / 2 + pad} fill="none" stroke={color} strokeWidth={1.5} />
+}
+
+interface WellsViewProps {
+  layout: WellLayout
+  selectedId: string | null
+  onSelect: (id: string) => void
+}
+
 /** Palette page and wells, in machine coordinates (place inside <Bed>). */
-export default function WellsView({ layout }: { layout: WellLayout }) {
+export default function WellsView({ layout, selectedId, onSelect }: WellsViewProps) {
   const { token } = theme.useToken()
   const pal = layout.palette
   return (
@@ -64,7 +89,10 @@ export default function WellsView({ layout }: { layout: WellLayout }) {
         />
       )}
       {layout.wells.map((w) => (
-        <WellMark key={w.id} well={w} />
+        <g key={w.id} onClick={() => onSelect(w.id)} style={{ cursor: 'pointer' }}>
+          <WellMark well={w} />
+          {w.id === selectedId && <Highlight well={w} color={token.colorPrimary} />}
+        </g>
       ))}
     </g>
   )

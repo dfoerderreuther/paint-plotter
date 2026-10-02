@@ -1,247 +1,255 @@
-import { useEffect, useState } from 'react'
 import {
   Alert,
-  App as AntApp,
   Button,
+  Card,
   ColorPicker,
+  Empty,
   Flex,
+  Form,
   Input,
   InputNumber,
   Popconfirm,
-  Select,
+  Segmented,
   Space,
+  Table,
+  Tag,
+  Tooltip,
   Typography,
 } from 'antd'
-import { DeleteOutlined, DownloadOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
-import {
-  arrangeWellLayout,
-  deleteWellLayout,
-  downloadWellLayoutGcode,
-  getWellLayout,
-  listWellLayouts,
-  saveWellLayout,
-  type Rect,
-  type Well,
-  type WellLayout,
-  type WellShape,
-} from '../api'
+import { AppstoreAddOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons'
+import type { Rect, Well, WellLayout, WellShape } from '../api'
+import { Swatch } from './DrawingPanel'
 
 interface WellsPanelProps {
   layout: WellLayout
   onChange: (layout: WellLayout) => void
   warnings: string[]
+  selectedId: string | null
+  onSelect: (id: string | null) => void
   /** Colors used in the loaded drawing, in order (for auto-arrange). */
   drawingColors: string[]
-  /** Bounds of the placed drawing, if one is loaded. */
-  drawingRect: Rect | null
+  onArrange: () => void
 }
 
-function RectInputs({ rect, onChange }: { rect: Rect; onChange: (r: Rect) => void }) {
-  const field = (key: keyof Rect, label: string) => (
+const SHAPES: { value: WellShape; label: string }[] = [
+  { value: 'cross', label: 'Cross' },
+  { value: 'circle', label: 'Circle' },
+  { value: 'rect', label: 'Rect' },
+]
+
+function RectFields({ rect, onChange }: { rect: Rect; onChange: (r: Rect) => void }) {
+  const num = (key: keyof Rect, prefix: string) => (
     <InputNumber
-      prefix={label}
+      prefix={prefix}
       suffix="mm"
       value={rect[key]}
       min={key.endsWith('_mm') ? 1 : undefined}
       onChange={(v) => onChange({ ...rect, [key]: v ?? 0 })}
-      style={{ width: 150 }}
+      style={{ width: '50%' }}
     />
   )
   return (
-    <Flex gap={8} wrap>
-      {field('x', 'X')}
-      {field('y', 'Y')}
-      {field('width_mm', 'W')}
-      {field('height_mm', 'H')}
-    </Flex>
+    <Form layout="vertical" size="small">
+      <Form.Item label="Position" style={{ marginBottom: 8 }}>
+        <Space.Compact block>
+          {num('x', 'X')}
+          {num('y', 'Y')}
+        </Space.Compact>
+      </Form.Item>
+      <Form.Item label="Size" style={{ marginBottom: 0 }}>
+        <Space.Compact block>
+          {num('width_mm', 'W')}
+          {num('height_mm', 'H')}
+        </Space.Compact>
+      </Form.Item>
+    </Form>
   )
 }
 
-function WellRow({ well, onChange, onDelete }: { well: Well; onChange: (w: Well) => void; onDelete: () => void }) {
+function WellEditor({ well, onChange, onDelete }: { well: Well; onChange: (w: Well) => void; onDelete: () => void }) {
+  const sizeLabel = well.shape === 'cross' ? 'Cross size' : well.shape === 'circle' ? 'Diameter' : 'Size'
   return (
-    <Flex vertical gap={6} style={{ padding: '8px 0', borderBottom: '1px solid #0000000f' }}>
-      <Flex gap={6} align="center">
-        <ColorPicker
-          size="small"
-          disabledAlpha
-          value={well.color}
-          onChangeComplete={(c) => onChange({ ...well, color: c.toHexString() })}
-        />
-        <Input size="small" value={well.name} onChange={(e) => onChange({ ...well, name: e.target.value })} />
-        <Select<WellShape>
-          size="small"
-          value={well.shape}
-          style={{ width: 90 }}
-          options={[
-            { value: 'cross', label: 'Cross' },
-            { value: 'circle', label: 'Circle' },
-            { value: 'rect', label: 'Rect' },
-          ]}
-          onChange={(shape) => onChange({ ...well, shape })}
-        />
-        <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={onDelete} />
-      </Flex>
-      <Flex gap={6} wrap>
-        <InputNumber size="small" prefix="X" value={well.x} onChange={(v) => onChange({ ...well, x: v ?? 0 })} style={{ width: 90 }} />
-        <InputNumber size="small" prefix="Y" value={well.y} onChange={(v) => onChange({ ...well, y: v ?? 0 })} style={{ width: 90 }} />
-        <InputNumber
-          size="small"
-          prefix={well.shape === 'cross' ? 'Size' : well.shape === 'circle' ? 'Ø' : 'W'}
-          min={1}
-          value={well.width_mm}
-          onChange={(v) => onChange({ ...well, width_mm: v ?? 1, height_mm: well.shape === 'rect' ? well.height_mm : (v ?? 1) })}
-          style={{ width: 100 }}
-        />
-        {well.shape === 'rect' && (
+    <Form layout="vertical" size="small">
+      <Form.Item label="Name and color" style={{ marginBottom: 8 }}>
+        <Space.Compact block>
+          <ColorPicker disabledAlpha value={well.color} onChangeComplete={(c) => onChange({ ...well, color: c.toHexString() })} />
+          <Input value={well.name} onChange={(e) => onChange({ ...well, name: e.target.value })} />
+        </Space.Compact>
+      </Form.Item>
+      <Form.Item label="Shape" style={{ marginBottom: 8 }}>
+        <Segmented<WellShape> block options={SHAPES} value={well.shape} onChange={(shape) => onChange({ ...well, shape })} />
+      </Form.Item>
+      <Form.Item label="Centre" style={{ marginBottom: 8 }}>
+        <Space.Compact block>
+          <InputNumber prefix="X" suffix="mm" value={well.x} onChange={(v) => onChange({ ...well, x: v ?? 0 })} style={{ width: '50%' }} />
+          <InputNumber prefix="Y" suffix="mm" value={well.y} onChange={(v) => onChange({ ...well, y: v ?? 0 })} style={{ width: '50%' }} />
+        </Space.Compact>
+      </Form.Item>
+      <Form.Item label={sizeLabel} style={{ marginBottom: 12 }}>
+        <Space.Compact block>
           <InputNumber
-            size="small"
-            prefix="H"
+            prefix={well.shape === 'rect' ? 'W' : undefined}
+            suffix="mm"
             min={1}
-            value={well.height_mm}
-            onChange={(v) => onChange({ ...well, height_mm: v ?? 1 })}
-            style={{ width: 90 }}
+            value={well.width_mm}
+            onChange={(v) =>
+              onChange({ ...well, width_mm: v ?? 1, height_mm: well.shape === 'rect' ? well.height_mm : (v ?? 1) })
+            }
+            style={{ width: well.shape === 'rect' ? '50%' : '100%' }}
           />
-        )}
-      </Flex>
-    </Flex>
+          {well.shape === 'rect' && (
+            <InputNumber
+              prefix="H"
+              suffix="mm"
+              min={1}
+              value={well.height_mm}
+              onChange={(v) => onChange({ ...well, height_mm: v ?? 1 })}
+              style={{ width: '50%' }}
+            />
+          )}
+        </Space.Compact>
+      </Form.Item>
+      <Popconfirm title={`Delete well '${well.name}'?`} okButtonProps={{ danger: true }} onConfirm={onDelete}>
+        <Button danger block icon={<DeleteOutlined />}>
+          Delete well
+        </Button>
+      </Popconfirm>
+    </Form>
   )
 }
 
-export default function WellsPanel({ layout, onChange, warnings, drawingColors, drawingRect }: WellsPanelProps) {
-  const { message } = AntApp.useApp()
-  const [saved, setSaved] = useState<string[]>([])
-
-  const refresh = () => listWellLayouts().then(setSaved, (e: Error) => message.error(e.message))
-  useEffect(() => {
-    refresh()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const run = async <T,>(action: () => Promise<T>, ok?: (r: T) => string) => {
-    try {
-      const r = await action()
-      if (ok) message.success(ok(r))
-      return r
-    } catch (e) {
-      message.error((e as Error).message)
-    }
-  }
+export default function WellsPanel(props: WellsPanelProps) {
+  const { layout, onChange, selectedId, onSelect } = props
+  const selected = layout.wells.find((w) => w.id === selectedId) ?? null
 
   const updateWell = (w: Well) => onChange({ ...layout, wells: layout.wells.map((x) => (x.id === w.id ? w : x)) })
   const addWell = () => {
     const base = layout.palette ?? { x: 0, y: 0, width_mm: 100, height_mm: 100 }
-    onChange({
-      ...layout,
-      wells: [
-        ...layout.wells,
-        {
-          id: crypto.randomUUID(),
-          name: String(layout.wells.length + 1),
-          color: '#888888',
-          shape: 'cross',
-          x: Math.round(base.x + base.width_mm / 2),
-          y: Math.round(base.y + base.height_mm / 2),
-          width_mm: 15,
-          height_mm: 15,
-        },
-      ],
-    })
+    const well: Well = {
+      id: crypto.randomUUID(),
+      name: String(layout.wells.length + 1),
+      color: '#888888',
+      shape: 'cross',
+      x: Math.round(base.x + base.width_mm / 2),
+      y: Math.round(base.y + base.height_mm / 2),
+      width_mm: 15,
+      height_mm: 15,
+    }
+    onChange({ ...layout, wells: [...layout.wells, well] })
+    onSelect(well.id)
   }
 
   return (
-    <Flex vertical gap={16}>
-      <div>
-        <Typography.Title level={5}>Layout</Typography.Title>
-        <Flex gap={8}>
-          <Select
-            placeholder="Load saved layout"
-            style={{ flex: 1 }}
-            value={null}
-            options={saved.map((n) => ({ value: n, label: n }))}
-            onChange={(name: string) => run(() => getWellLayout(name)).then((l) => l && onChange(l))}
-          />
-        </Flex>
-        <Flex gap={8} style={{ marginTop: 8 }}>
-          <Input value={layout.name} onChange={(e) => onChange({ ...layout, name: e.target.value })} prefix="Name" />
-          <Button
-            icon={<SaveOutlined />}
-            disabled={!layout.name.trim()}
-            onClick={() => run(() => saveWellLayout(layout), () => `Saved '${layout.name}'`).then(refresh)}
-          >
-            Save
-          </Button>
-          <Popconfirm
-            title={`Delete saved layout '${layout.name}'?`}
-            disabled={!saved.includes(layout.name)}
-            onConfirm={() => run(() => deleteWellLayout(layout.name), () => 'Deleted').then(refresh)}
-          >
-            <Button danger icon={<DeleteOutlined />} disabled={!saved.includes(layout.name)} />
-          </Popconfirm>
-        </Flex>
-      </div>
+    <Flex vertical gap={12}>
+      {props.warnings.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          title={`${props.warnings.length} layout ${props.warnings.length === 1 ? 'problem' : 'problems'}`}
+          description={
+            <ul style={{ margin: 0, paddingLeft: 16 }}>
+              {props.warnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          }
+        />
+      )}
 
-      <div>
-        <Typography.Title level={5}>Palette page</Typography.Title>
+      <Card
+        size="small"
+        title="Palette page"
+        extra={
+          layout.palette && (
+            <Button size="small" type="link" danger onClick={() => onChange({ ...layout, palette: null })}>
+              Remove
+            </Button>
+          )
+        }
+      >
         <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-          A4 sheet in the corner diagonally opposite the drawing, with one cross per drawing color.
+          A4 sheet in the corner diagonally opposite the drawing, with one paint cross per drawing color.
         </Typography.Paragraph>
-        <Space wrap>
+        <Tooltip title={props.drawingColors.length === 0 ? 'Load an SVG first' : undefined}>
           <Button
             type="primary"
-            disabled={drawingColors.length === 0}
-            onClick={() =>
-              run(() => arrangeWellLayout(layout, drawingColors, drawingRect), (l) => `Arranged ${l.wells.length} crosses`).then(
-                (l) => l && onChange(l),
-              )
-            }
+            block
+            icon={<AppstoreAddOutlined />}
+            disabled={props.drawingColors.length === 0}
+            onClick={props.onArrange}
           >
-            Arrange crosses from drawing
+            Arrange crosses from drawing ({props.drawingColors.length} colors)
           </Button>
-          {layout.palette && <Button onClick={() => onChange({ ...layout, palette: null })}>Remove page</Button>}
-        </Space>
-        {drawingColors.length === 0 && (
-          <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
-            Load an SVG first (Drawing tab).
-          </Typography.Paragraph>
-        )}
+        </Tooltip>
         {layout.palette && (
-          <div style={{ marginTop: 8 }}>
-            <RectInputs rect={layout.palette} onChange={(r) => onChange({ ...layout, palette: r })} />
+          <div style={{ marginTop: 12 }}>
+            <RectFields rect={layout.palette} onChange={(r) => onChange({ ...layout, palette: r })} />
           </div>
         )}
-      </div>
+      </Card>
 
-      <div>
-        <Flex justify="space-between" align="center">
-          <Typography.Title level={5} style={{ margin: 0 }}>
-            Wells ({layout.wells.length})
-          </Typography.Title>
+      <Card
+        size="small"
+        title={`Wells (${layout.wells.length})`}
+        extra={
           <Button size="small" icon={<PlusOutlined />} onClick={addWell}>
             Add
           </Button>
-        </Flex>
-        {layout.wells.map((w) => (
-          <WellRow
-            key={w.id}
-            well={w}
+        }
+        styles={{ body: { padding: 0 } }}
+      >
+        <Table<Well>
+          size="small"
+          rowKey="id"
+          pagination={false}
+          dataSource={layout.wells}
+          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No wells" /> }}
+          rowClassName={(w) => (w.id === selectedId ? 'ant-table-row-selected' : '')}
+          onRow={(w) => ({ onClick: () => onSelect(w.id === selectedId ? null : w.id), style: { cursor: 'pointer' } })}
+          columns={[
+            {
+              title: 'Well',
+              key: 'name',
+              render: (_, w) => (
+                <Space size={6}>
+                  <Swatch color={w.color} />
+                  {w.name}
+                </Space>
+              ),
+            },
+            { title: 'Shape', key: 'shape', render: (_, w) => <Tag>{w.shape}</Tag> },
+            {
+              title: 'Position',
+              key: 'pos',
+              align: 'right',
+              render: (_, w) => (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {w.x.toFixed(0)}, {w.y.toFixed(0)}
+                </Typography.Text>
+              ),
+            },
+          ]}
+        />
+      </Card>
+
+      {selected ? (
+        <Card size="small" title={`Edit '${selected.name}'`}>
+          <WellEditor
+            well={selected}
             onChange={updateWell}
-            onDelete={() => onChange({ ...layout, wells: layout.wells.filter((x) => x.id !== w.id) })}
+            onDelete={() => {
+              onChange({ ...layout, wells: layout.wells.filter((x) => x.id !== selected.id) })
+              onSelect(null)
+            }}
           />
-        ))}
-      </div>
-
-      {warnings.map((w) => (
-        <Alert key={w} type="warning" showIcon message={w} />
-      ))}
-
-      <div>
-        <Typography.Title level={5}>Pencil G-code</Typography.Title>
-        <Button
-          icon={<DownloadOutlined />}
-          onClick={() => run(() => downloadWellLayoutGcode(layout), (f) => `Downloaded ${f}`)}
-        >
-          Download pencil G-code
-        </Button>
-      </div>
+        </Card>
+      ) : (
+        layout.wells.length > 0 && (
+          <Typography.Text type="secondary" style={{ textAlign: 'center' }}>
+            Select a well in the table or on the bed to edit it.
+          </Typography.Text>
+        )
+      )}
     </Flex>
   )
 }

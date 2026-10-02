@@ -85,9 +85,10 @@ export const listWellLayouts = () => fetch('/api/well-layouts').then((r) => pars
 export const getWellLayout = (name: string) => fetch(layoutUrl(name)).then((r) => parse<WellLayout>(r))
 export const saveWellLayout = (layout: WellLayout) =>
   fetch(layoutUrl(layout.name), json('PUT', layout)).then((r) => parse<WellLayout>(r))
-export const deleteWellLayout = async (name: string) => {
+export const deleteWellLayout = async (name: string): Promise<true> => {
   const res = await fetch(layoutUrl(name), { method: 'DELETE' })
   if (!res.ok) throw new Error(`Delete failed: ${res.status}`)
+  return true
 }
 export const checkWellLayout = (layout: WellLayout) =>
   fetch('/api/well-layouts/check', json('POST', layout)).then((r) => parse<{ warnings: string[] }>(r))

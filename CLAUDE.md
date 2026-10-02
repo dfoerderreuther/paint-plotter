@@ -24,9 +24,14 @@ frontend/                   React + antd + TypeScript (Vite)
   src/api.ts                API types (mirror the pydantic models) and fetch helpers
   src/components/Bed.tsx    Work area in machine coordinates (origin bottom left)
   src/components/DrawingView.tsx   Draws the paint layers on the bed
-  src/components/DrawingPanel.tsx  Upload, placement, layer list
+  src/components/DrawingPanel.tsx  Drawing tab: placement, layer table (empty state → Load SVG)
+  src/components/AppMenu.tsx       Header menu bar (File / Export / View dropdowns)
+  src/components/LoadSvgModal.tsx  SVG upload modal
+  src/components/LayoutModals.tsx  Open / Save-as well layout modals
+  src/components/PlotterDrawer.tsx Plotter settings drawer (read-only)
+  src/components/StatusBar.tsx      Bottom status bar
   src/placement.ts          Drawing placement on the bed (offset + scale)
-  src/components/WellsPanel.tsx  Wells tab: layouts, palette, wells, pencil G-code
+  src/components/WellsPanel.tsx  Wells tab: palette, wells table, selected-well editor
   src/components/WellsView.tsx   Palette page and wells on the bed
 projects/                   Saved paintings / well layouts (JSON), git-ignored
 ```
@@ -163,6 +168,21 @@ drawing lie, and an overlap between the palette and the drawing is **not** flagg
 The app only checks: wells, cross labels and the palette page are inside the work area,
 wells are on the palette page, and wells are at least `margin_mm` (default 5) apart. For
 checking, a cross counts as a circle the size of the cross (the paint spot).
+
+## UI conventions
+
+- **antd 6** components throughout: the header menu bar uses click-triggered `Dropdown`s
+  (File: Load SVG, well layout New/Open/Save/Save as · Export: pencil G-code · View:
+  plotter settings). Dialogs are `Modal`s, settings go in a `Drawer`, and the side panels use
+  `Tabs` + `Card` + `Table` + vertical `Form`. A status bar sits at the bottom.
+- App state lives in `App.tsx`. Menu actions go through `onMenu`. Wells can be selected
+  in the table or by clicking them on the bed.
+- Avoid props that are deprecated in antd 6: `Alert message` → `title`, `Drawer width` → `size`,
+  `Divider type` → `orientation`, `InputNumber addonBefore/After` → `prefix`/`suffix` or
+  `Space.Compact`, `Card bordered` → `variant`, `destroyOnClose` → `destroyOnHidden`, and
+  `List` (deprecated) → `Table` or `Flex`. Check the browser console for antd warnings after UI changes.
+- Browser automation note: in a background tab, antd's enter animations can stay stuck
+  at the start (invisible). Check the DOM rather than trusting the screenshot.
 
 ## SVG import (how it works)
 
