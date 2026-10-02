@@ -155,12 +155,17 @@ export interface PaintSettings {
   /** How far the brush paints per dip before it needs fresh paint. */
   paint_distance_mm: number
   fill: {
-    /** hatch: parallel lines at angle_deg. contour: outline, then step inwards ring by ring. */
-    pattern: 'hatch' | 'contour'
+    /** hatch: parallel lines at angle_deg. contour: outline, then step inwards ring by ring. dots: dabs on a grid. */
+    pattern: 'hatch' | 'contour' | 'dots'
     angle_deg: number
     overlap: number
     /** Hatch only (contour always starts with the outline). */
     outline: boolean
+    /** Dots only. */
+    dot_grid: 'hex' | 'square'
+    dot_jitter_mm: number
+    /** Dots only: fresh paint after this many dots. */
+    dots_per_dip: number
   }
   dip: {
     mode: 'tap' | 'circle'
@@ -173,7 +178,15 @@ export interface PaintSettings {
 export const DEFAULT_PAINT_SETTINGS: PaintSettings = {
   brush_width_mm: 3,
   paint_distance_mm: 150,
-  fill: { pattern: 'hatch', angle_deg: 45, overlap: 0.2, outline: true },
+  fill: {
+    pattern: 'hatch',
+    angle_deg: 45,
+    overlap: 0.2,
+    outline: true,
+    dot_grid: 'hex',
+    dot_jitter_mm: 0,
+    dots_per_dip: 20,
+  },
   dip: { mode: 'tap', circle_radius_mm: 3, resume_overlap_mm: 0 },
 }
 

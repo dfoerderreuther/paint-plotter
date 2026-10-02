@@ -13,6 +13,10 @@ from paint_plotter.config import PlotterConfig
 Point = tuple[float, float]
 
 
+# Rough time for one Z move (tool up or down) in the time estimate.
+Z_MOVE_SECONDS = 0.15
+
+
 class GcodeError(ValueError):
     pass
 
@@ -31,6 +35,7 @@ class GcodeWriter:
         # Distances for statistics / time estimates (mm).
         self.travel_mm = 0.0
         self.paint_mm = 0.0
+        self.z_moves = 0
         self.up()
 
     def _fmt(self, v: float) -> str:
@@ -52,11 +57,13 @@ class GcodeWriter:
         if self._tool_down:
             self._lines.append(f"G0 Z{self._fmt(self.config.z.up)} F{self._fmt(self.config.feed_rates.travel_mm_min)}")
             self._tool_down = False
+            self.z_moves += 1
 
     def down(self) -> None:
         if not self._tool_down:
             self._lines.append(f"G0 Z{self._fmt(self.config.z.down)} F{self._fmt(self.config.feed_rates.travel_mm_min)}")
             self._tool_down = True
+            self.z_moves += 1
 
     def _moved(self, x: float, y: float, painting: bool) -> None:
         if self._pos is not None:
@@ -88,14 +95,21 @@ class GcodeWriter:
             self._moved(x, y, painting=True)
         self.up()
 
+    def dot(self, x: float, y: float) -> None:
+        """A dab: move there, tool down, tool up."""
+        self.travel(x, y)
+        self.down()
+        self.up()
+
     def polylines(self, lines: Iterable[Sequence[Point]]) -> None:
         for line in lines:
             self.polyline(line)
 
     def estimated_seconds(self) -> float:
-        """Rough run time from the move lengths and feed rates (ignores acceleration and Z)."""
+        """Rough run time from move lengths, feed rates and Z moves (ignores acceleration)."""
         fr = self.config.feed_rates
-        return self.travel_mm / fr.travel_mm_min * 60 + self.paint_mm / fr.paint_mm_min * 60
+        xy = self.travel_mm / fr.travel_mm_min * 60 + self.paint_mm / fr.paint_mm_min * 60
+        return xy + self.z_moves * Z_MOVE_SECONDS
 
     def finish(self) -> str:
         park = self.config.park

@@ -236,6 +236,12 @@ checking, a cross counts as a circle the size of the cross (the paint spot).
   end and is joined to it when the connection is short and inside the area (near-spiral, few lifts).
   After the last ring, one more ring half a brush further in closes any gap in the middle.
   `outline` and `angle_deg` don't apply.
+- **Fill pattern `dots`:** brush dabs (travel, down, up) on a **hex** or **square** grid
+  with spacing `brush × (1 − overlap)`, in zig-zag rows. Optional `dot_jitter_mm` gives a random
+  offset that is reproducible (fixed seed) and stays inside the area. Areas too small for the
+  grid get one dot. Fresh paint every **`dots_per_dip`** dots (not paint-per-dip distance).
+  Dots are painted before the lines. A note appears if the overlap leaves gaps (hex needs
+  ≥ 14 %, square ≥ 30 %). Jitter also opens small gaps, so give it more overlap.
 - **Lines** (stroke layers): centre line only. A note appears if the line is > 1.5 × the brush width.
 - **Order per file:** outlines (nearest neighbour) → hatch → lines (nearest neighbour).
 - **Paint per dip:** dip at the start, then dip again every `paint_distance_mm` of painting.
@@ -247,6 +253,7 @@ checking, a cross counts as a circle the size of the cross (the paint spot).
   before the start of a stroke, and never at the start of a new stroke.
 - **Dip motion:** `tap` (down, up at the well centre) or `circle` (down, one circle of
   `circle_radius_mm`, back to the centre, up).
+- The time estimate counts 0.15 s per Z move (`Z_MOVE_SECONDS` in gcode.py), which matters for dots.
 - Strokes are simplified to 0.05 mm, and moves outside the work area are refused (422 with message).
 - **Copy G-code:** each file in the run order (pencil too) has a copy button, for example to paste
   into ncviewer.com for a preview. That site has no known API, so nothing is sent there automatically.

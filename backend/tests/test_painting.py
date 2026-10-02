@@ -1,5 +1,6 @@
 import io
 import math
+import random
 import re
 import zipfile
 from pathlib import Path
@@ -7,6 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from shapely.geometry import LineString, Polygon
+from shapely.geometry import Point as Point_
 from shapely.ops import unary_union
 
 from paint_plotter.config import load_config
@@ -15,6 +17,7 @@ from paint_plotter.painting import (
     DipSettings,
     FillSettings,
     contour,
+    dots,
     PaintRequest,
     PaintSettings,
     Placement,
@@ -124,6 +127,66 @@ def test_plan_with_contour_pattern(request_all):
     # brush paths (3 mm wide) cover the shrunk rectangle
     covered = unary_union([LineString(s).buffer(1.5) for s in strokes_in_big])
     assert covered.contains(big.buffer(-1.5))
+
+
+# ---------------------------------------------------------------- dots
+
+
+def test_square_dots_grid():
+    pts = dots(Polygon(square(0, 0, 10)), spacing=2.5, grid="square", jitter=0, rng=random.Random(0))
+    assert len(pts) == 25  # 0, 2.5, 5, 7.5, 10 in both directions
+    assert all(0 <= x <= 10 and 0 <= y <= 10 for x, y in pts)
+
+
+@pytest.mark.parametrize("grid", ["hex", "square"])
+def test_dots_cover_the_area_with_enough_overlap(grid):
+    area = Polygon(square(0, 0, 20))
+    brush_r = 1.5
+    spacing = 3 * (1 - (0.2 if grid == "hex" else 0.3))  # square needs ≥ 29 % overlap
+    pts = dots(area, spacing, grid, 0, random.Random(0))
+    covered = unary_union([Point_(p).buffer(brush_r) for p in pts])
+    assert covered.contains(area.buffer(-brush_r))
+
+
+def test_dots_jitter_is_reproducible_and_stays_inside():
+    area = Polygon(square(0, 0, 10))
+    a = dots(area, 2, "hex", 0.8, random.Random(0))
+    b = dots(area, 2, "hex", 0.8, random.Random(0))
+    plain = dots(area, 2, "hex", 0, random.Random(0))
+    assert a == b and a != plain
+    assert all(area.buffer(1e-6).contains(Point_(p)) for p in a)
+
+
+def test_tiny_area_gets_one_dot():
+    pts = dots(Polygon(square(0, 0, 0.5)), 3, "hex", 0, random.Random(0))
+    assert len(pts) == 1
+
+
+def test_dots_gap_warning(request_all):
+    fill = FillSettings(pattern="dots", dot_grid="square", overlap=0.2)
+    settings = request_all.settings.model_copy(update={"fill": fill})
+    plan = plan_painting(request_all.model_copy(update={"settings": settings}), CONFIG)
+    assert any("at least 30 % overlap for a square grid" in w for w in plan.warnings)
+    fill = FillSettings(pattern="dots", dot_grid="hex", overlap=0.2)
+    settings = request_all.settings.model_copy(update={"fill": fill})
+    plan = plan_painting(request_all.model_copy(update={"settings": settings}), CONFIG)
+    assert not any("gaps" in w for w in plan.warnings)
+
+
+def test_plan_with_dots_dips_every_n_dots(request_all):
+    fill = FillSettings(pattern="dots", dots_per_dip=10)
+    settings = request_all.settings.model_copy(update={"fill": fill})
+    plan = plan_painting(request_all.model_copy(update={"settings": settings}), CONFIG)
+    red = next(f for f in plan.files if f.well_color == "#ff0000")
+    n_dots = sum(1 for st in red.strokes if st[0] == st[-1] and len(st) == 2)
+    assert n_dots > 10
+    assert red.dips == math.ceil(n_dots / 10)  # red has no lines, only dots
+    body = red.gcode.split("; dip into")
+    # between dips: at most 10 dabs (down/up pairs) besides the dip itself
+    assert all(chunk.count("G0 Z0") <= 11 for chunk in body[1:])
+    # the green line layer still gets painted as a stroke
+    green = next(f for f in plan.files if f.well_color == "#00aa00")
+    assert green.paint_length_mm > 0
 
 
 # ---------------------------------------------------------------- paint per dip

@@ -13,12 +13,14 @@ motions can be added later.
 """
 
 import math
+import random
 from collections.abc import Iterator
 from typing import Literal
 
 from pydantic import BaseModel, Field
 from shapely import affinity
 from shapely.geometry import GeometryCollection, LineString, MultiLineString, MultiPolygon, Polygon
+from shapely.geometry import Point as Point_
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 
@@ -39,10 +41,15 @@ SIMPLIFY_MM = 0.05  # max deviation when reducing points (fewer G-code lines)
 
 class FillSettings(BaseModel):
     # hatch: parallel lines at angle_deg. contour: outline, then step inwards ring by ring.
-    pattern: Literal["hatch", "contour"] = "hatch"
+    # dots: brush dabs (down, up) on a grid.
+    pattern: Literal["hatch", "contour", "dots"] = "hatch"
     angle_deg: float = 45  # hatch only
-    # Overlap of neighbouring hatch lines, as a fraction of the brush width.
+    # Overlap of neighbouring lines / dots, as a fraction of the brush width.
     overlap: float = Field(default=0.2, ge=0, le=0.9)
+    # dots only: grid layout, random offset per dot (reproducible), dots between dips.
+    dot_grid: Literal["hex", "square"] = "hex"
+    dot_jitter_mm: float = Field(default=0, ge=0)
+    dots_per_dip: int = Field(default=20, ge=1)
     # Paint the area's outline before hatching it (gives a clean edge). Contour always starts
     # with the outline, so this only affects hatch.
     outline: bool = True
@@ -185,6 +192,41 @@ def hatch(area: BaseGeometry, spacing: float, angle_deg: float) -> list[Polyline
                 continue
         result.append(pts)
     return [list(affinity.rotate(LineString(p), angle_deg, origin=(0, 0)).coords) for p in result]
+
+
+DOT_SEED = 0  # jitter is random but reproducible
+
+
+def dots(area: BaseGeometry, spacing: float, grid: str, jitter: float, rng: random.Random) -> list[Point]:
+    """Dab positions inside the area: rows of a hex or square grid, in zig-zag order.
+    Areas too small for the grid still get one dot."""
+    if area.is_empty:
+        return []
+    minx, miny, maxx, maxy = area.bounds
+    row_step = spacing * math.sqrt(3) / 2 if grid == "hex" else spacing
+    inside = area.buffer(1e-6)
+    result: list[Point] = []
+    y, row = miny, 0
+    while y <= maxy + 1e-9:
+        x0 = minx + (spacing / 2 if grid == "hex" and row % 2 else 0)
+        xs = [x0 + i * spacing for i in range(int((maxx - x0) / spacing + 1e-9) + 1)]
+        if row % 2:
+            xs.reverse()
+        for x in xs:
+            if not inside.contains(Point_(x, y)):
+                continue
+            p = (x, y)
+            if jitter > 0:
+                q = (x + rng.uniform(-jitter, jitter), y + rng.uniform(-jitter, jitter))
+                if inside.contains(Point_(*q)):
+                    p = q
+            result.append(p)
+        y += row_step
+        row += 1
+    if not result:
+        c = area.representative_point()
+        result.append((c.x, c.y))
+    return result
 
 
 def _ring_from(ring: Polyline, pos: Point) -> Polyline:
@@ -345,12 +387,20 @@ def plan_painting(req: PaintRequest, config: PlotterConfig) -> PaintPlan:
             )
 
     spacing = s.brush_width_mm * (1 - s.fill.overlap)
+    if s.fill.pattern == "dots":
+        # Round dabs only close the gaps when spacing ≤ brush × √3/2 (hex) or brush × √2/2 (square).
+        max_spacing = s.brush_width_mm * (math.sqrt(3) / 2 if s.fill.dot_grid == "hex" else math.sqrt(2) / 2)
+        if spacing > max_spacing + 1e-9:
+            need = math.ceil((1 - max_spacing / s.brush_width_mm) * 100)
+            warnings.append(f"Dots leave gaps: use at least {need} % overlap for a {s.fill.dot_grid} grid")
     files: list[PaintFile] = []
     for n, (well_id, layers) in enumerate(groups.items()):
         well = wells[well_id]
         outline_strokes: list[Polyline] = []
         fill_strokes: list[Polyline] = []
         line_strokes: list[Polyline] = []
+        dot_points: list[Point] = []
+        rng = random.Random(DOT_SEED)
         for layer in layers:
             paths = [_place(p, req.placement) for p in layer.paths]
             if layer.kind == "stroke":
@@ -361,6 +411,9 @@ def plan_painting(req: PaintRequest, config: PlotterConfig) -> PaintPlan:
             if inset.is_empty:
                 # Thinner than the brush: at least paint along its edge.
                 outline_strokes.extend(outlines(area))
+                continue
+            if s.fill.pattern == "dots":
+                dot_points.extend(dots(inset, spacing, s.fill.dot_grid, s.fill.dot_jitter_mm, rng))
                 continue
             if s.fill.pattern == "contour":
                 start = fill_strokes[-1][-1] if fill_strokes else (well.x, well.y)
@@ -384,7 +437,15 @@ def plan_painting(req: PaintRequest, config: PlotterConfig) -> PaintPlan:
         g.comment(f"drawing colors: {', '.join(colors)}")
         dips = 0
         painted: list[Polyline] = []
-        for kind, piece in split_by_paint(strokes, s.paint_distance_mm, s.dip.resume_overlap_mm):
+        # Dots first (fresh paint every `dots_per_dip` dots), then strokes.
+        for i, (x, y) in enumerate(dot_points):
+            if i % s.fill.dots_per_dip == 0:
+                _dip(g, well, s.dip)
+                dips += 1
+            g.dot(x, y)
+            painted.append([(round(x, 2), round(y, 2))] * 2)  # zero-length: drawn as a round dab
+        events = split_by_paint(strokes, s.paint_distance_mm, s.dip.resume_overlap_mm) if strokes else iter(())
+        for kind, piece in events:
             if kind == "dip":
                 _dip(g, well, s.dip)
                 dips += 1

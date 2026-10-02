@@ -83,6 +83,18 @@ function FileStep({ f }: { f: PaintFile }) {
 export default function PaintPanel(p: PaintPanelProps) {
   const s = p.settings
   const set = (patch: Partial<PaintSettings>) => p.onSettingsChange({ ...s, ...patch })
+  const setFill = (patch: Partial<PaintSettings['fill']>) => set({ fill: { ...s.fill, ...patch } })
+  const overlapInput = (width: string) => (
+    <InputNumber
+      suffix="% overlap"
+      min={0}
+      max={90}
+      step={5}
+      value={Math.round(s.fill.overlap * 100)}
+      onChange={(v) => setFill({ overlap: (v ?? 0) / 100 })}
+      style={{ width }}
+    />
+  )
   const total = p.plan?.files.reduce((t, f) => t + f.estimated_seconds, 0) ?? 0
 
   return (
@@ -101,7 +113,7 @@ export default function PaintPanel(p: PaintPanelProps) {
           </Form.Item>
           <Form.Item
             label="Paint per dip"
-            tooltip="How far the brush paints before it goes back to its cross for fresh paint. Strokes continue where they stopped."
+            tooltip="How far the brush paints before it goes back to its cross for fresh paint. Strokes continue where they stopped. (Dots use 'Dots per dip' instead.)"
             style={{ marginBottom: 0 }}
           >
             <InputNumber
@@ -124,11 +136,12 @@ export default function PaintPanel(p: PaintPanelProps) {
               options={[
                 { value: 'hatch', label: 'Hatch (parallel lines)' },
                 { value: 'contour', label: 'Contour (outline inwards)' },
+                { value: 'dots', label: 'Dots (dabs)' },
               ]}
               onChange={(pattern) => set({ fill: { ...s.fill, pattern } })}
             />
           </Form.Item>
-          {s.fill.pattern === 'hatch' ? (
+          {s.fill.pattern === 'hatch' && (
             <>
               <Form.Item label="Angle and overlap" style={{ marginBottom: 8 }}>
                 <Space.Compact block>
@@ -136,45 +149,70 @@ export default function PaintPanel(p: PaintPanelProps) {
                     suffix="°"
                     value={s.fill.angle_deg}
                     step={15}
-                    onChange={(v) => set({ fill: { ...s.fill, angle_deg: v ?? 0 } })}
+                    onChange={(v) => setFill({ angle_deg: v ?? 0 })}
                     style={{ width: '50%' }}
                   />
-                  <InputNumber
-                    suffix="% overlap"
-                    min={0}
-                    max={90}
-                    step={5}
-                    value={Math.round(s.fill.overlap * 100)}
-                    onChange={(v) => set({ fill: { ...s.fill, overlap: (v ?? 0) / 100 } })}
-                    style={{ width: '50%' }}
-                  />
+                  {overlapInput('50%')}
                 </Space.Compact>
               </Form.Item>
               <Space>
-                <Switch
-                  size="small"
-                  checked={s.fill.outline}
-                  onChange={(outline) => set({ fill: { ...s.fill, outline } })}
-                />
+                <Switch size="small" checked={s.fill.outline} onChange={(outline) => setFill({ outline })} />
                 <Typography.Text>Paint outline first</Typography.Text>
               </Space>
             </>
-          ) : (
+          )}
+          {s.fill.pattern === 'contour' && (
             <Form.Item
               label="Overlap"
               tooltip="Starts with the outline, then steps inwards by brush width minus overlap until the area is painted."
               style={{ marginBottom: 0 }}
             >
-              <InputNumber
-                suffix="% overlap"
-                min={0}
-                max={90}
-                step={5}
-                value={Math.round(s.fill.overlap * 100)}
-                onChange={(v) => set({ fill: { ...s.fill, overlap: (v ?? 0) / 100 } })}
-                style={{ width: '100%' }}
-              />
+              {overlapInput('100%')}
             </Form.Item>
+          )}
+          {s.fill.pattern === 'dots' && (
+            <>
+              <Form.Item
+                label="Grid"
+                tooltip="Hex closes the gaps from ~14 % overlap, square from ~30 %."
+                style={{ marginBottom: 8 }}
+              >
+                <Segmented<PaintSettings['fill']['dot_grid']>
+                  block
+                  value={s.fill.dot_grid}
+                  options={[
+                    { value: 'hex', label: 'Hex' },
+                    { value: 'square', label: 'Square' },
+                  ]}
+                  onChange={(dot_grid) => setFill({ dot_grid })}
+                />
+              </Form.Item>
+              <Form.Item label="Overlap and jitter" style={{ marginBottom: 8 }}>
+                <Space.Compact block>
+                  {overlapInput('50%')}
+                  <Tooltip title="Random offset per dot for a hand-painted look (same every time)">
+                    <InputNumber
+                      prefix="±"
+                      suffix="mm"
+                      min={0}
+                      step={0.25}
+                      value={s.fill.dot_jitter_mm}
+                      onChange={(v) => setFill({ dot_jitter_mm: v ?? 0 })}
+                      style={{ width: '50%' }}
+                    />
+                  </Tooltip>
+                </Space.Compact>
+              </Form.Item>
+              <Form.Item label="Dots per dip" tooltip="Fresh paint after this many dots." style={{ marginBottom: 0 }}>
+                <InputNumber
+                  min={1}
+                  step={5}
+                  value={s.fill.dots_per_dip}
+                  onChange={(v) => setFill({ dots_per_dip: v ?? 1 })}
+                  style={{ width: '100%' }}
+                />
+              </Form.Item>
+            </>
           )}
         </Form>
       </Card>
