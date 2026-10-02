@@ -121,7 +121,9 @@ def test_check_endpoint():
 def test_gcode_endpoint_returns_numbered_file():
     res = client.post("/api/well-layouts/gcode", json=make_layout().model_dump())
     assert res.status_code == 200
-    assert 'filename="01_layout_Studio_A_pencil.gcode"' in res.headers["content-disposition"]
+    assert 'filename="01_Studio_A_pencil.gcode"' in res.headers["content-disposition"]
+    res = client.post("/api/well-layouts/gcode?project=My Cat", json=make_layout().model_dump())
+    assert 'filename="01_My_Cat_pencil.gcode"' in res.headers["content-disposition"]
     assert res.text.startswith("; Paint Plotter")
 
 

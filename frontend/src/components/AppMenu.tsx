@@ -46,7 +46,7 @@ const MENUS: { label: string; items: Items }[] = [
       { type: 'divider' },
       {
         type: 'group',
-        label: 'Well layout',
+        label: 'Well layout library',
         children: [
           { key: 'layout-new', label: 'New', icon: <FileAddOutlined /> },
           { key: 'layout-open', label: 'Open…', icon: <FolderOpenOutlined /> },

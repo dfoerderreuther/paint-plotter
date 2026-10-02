@@ -15,8 +15,6 @@ interface StatusBarProps {
   saveError: string | null
   fileName: string | null
   scale: number | null
-  layoutName: string
-  layoutDirty: boolean
   warningCount: number
   /** [assigned, total] drawing colors, or null without a drawing. */
   colorsAssigned: [number, number] | null
@@ -35,11 +33,6 @@ export default function StatusBar(p: StatusBarProps) {
       <Divider orientation="vertical" />
       <Typography.Text {...text}>{p.fileName ? `${p.fileName} · scale ${p.scale}` : 'No drawing'}</Typography.Text>
       <Divider orientation="vertical" />
-      <Typography.Text {...text}>
-        Layout: {p.layoutName}
-        {p.layoutDirty && ' (unsaved)'}
-      </Typography.Text>
-      <Divider orientation="vertical" />
       {p.colorsAssigned && (
         <>
           <Badge
@@ -54,9 +47,9 @@ export default function StatusBar(p: StatusBarProps) {
         </>
       )}
       {p.warningCount > 0 ? (
-        <Badge status="warning" text={<Typography.Text {...text}>{p.warningCount} layout warnings</Typography.Text>} />
+        <Badge status="warning" text={<Typography.Text {...text}>{p.warningCount} well warnings</Typography.Text>} />
       ) : (
-        <Badge status="success" text={<Typography.Text {...text}>Layout OK</Typography.Text>} />
+        <Badge status="success" text={<Typography.Text {...text}>Wells OK</Typography.Text>} />
       )}
       <Typography.Text {...text} style={{ ...text.style, marginLeft: 'auto' }}>
         Work area {p.workArea}

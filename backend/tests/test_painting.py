@@ -314,7 +314,7 @@ def test_export_zip(request_all):
     res = TestClient(app).post("/api/paint/export", json=request_all.model_dump())
     assert res.status_code == 200
     names = zipfile.ZipFile(io.BytesIO(res.content)).namelist()
-    assert names[0] == "01_layout_t_pencil.gcode"
+    assert names[0] == "01_t_pencil.gcode"  # no project name: falls back to the layout name
     assert "02_1_ff0000_brush.gcode" in names
     assert "steps.txt" in names
 
@@ -336,7 +336,7 @@ def test_export_to_project_folder_replaces_old_export(request_all, data_dir):
     assert res.status_code == 200
     body = res.json()
     assert body["folder"] == str(out.resolve())
-    assert body["files"][0] == "01_layout_t_pencil.gcode" and body["files"][-1] == "steps.txt"
+    assert body["files"][0] == "01_t_pencil.gcode" and body["files"][-1] == "steps.txt"
     on_disk = sorted(f.name for f in out.iterdir())
     assert "09_old_brush.gcode" not in on_disk
     assert "notes.md" in on_disk

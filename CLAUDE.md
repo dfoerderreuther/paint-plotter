@@ -25,7 +25,7 @@ backend/                    Python (uv) – FastAPI app, vpype
 config/plotter.json         Plotter config (work area, Z up/down, feed rates)
 frontend/                   React + antd + TypeScript (Vite)
   src/api.ts                API types (mirror the pydantic models) and fetch helpers
-  src/components/Bed.tsx    Work area in machine coordinates (origin bottom left)
+  src/components/Bed.tsx    Work area in machine coordinates (origin bottom left), zoom + pan
   src/components/DrawingView.tsx   Draws the paint layers on the bed
   src/components/DrawingPanel.tsx  Drawing tab: placement, layer table (empty state → Load SVG)
   src/components/AppMenu.tsx       Header menu bar (File / Export / View dropdowns)
@@ -166,7 +166,7 @@ Brush cleaning between colors is also still being developed. Planned options:
    **cross per drawing color** is spaced evenly on it, labelled "<n> <hex>" to the right
    of the cross. That way you can refill paint while the plotter paints elsewhere. The
    plotter is CoreXY.
-3. Lay the A4 sheet on the bed and run the **pencil G-code** (`01_layout_<name>_pencil.gcode`).
+3. Lay the A4 sheet on the bed and run the **pencil G-code** (`01_<project>_pencil.gcode`).
    It draws only the crosses and their labels.
 4. Put each paint onto its cross. **The brush picks up paint at the centre of the cross.**
 
@@ -257,7 +257,7 @@ checking, a cross counts as a circle the size of the cross (the paint spot).
 - Strokes are simplified to 0.05 mm, and moves outside the work area are refused (422 with message).
 - **Copy G-code:** each file in the run order (pencil too) has a copy button, for example to paste
   into ncviewer.com for a preview. That site has no known API, so nothing is sent there automatically.
-- **Export zip:** `01_layout_<name>_pencil.gcode` (if there are wells), the brush files, and
+- **Export zip:** `01_<project>_pencil.gcode` (if there are wells), the brush files, and
   `steps.txt` (what to do before each file). The time estimate uses only lengths and feed rates.
 - Not yet: knockout of overlapping colors (paint under later shapes is not removed),
   more fill patterns, and painting order options.
@@ -270,6 +270,13 @@ checking, a cross counts as a circle the size of the cross (the paint spot).
   `Tabs` + `Card` + `Table` + vertical `Form`. A status bar sits at the bottom.
 - Side panel tabs in workflow order: Drawing → Wells → Colors → Paint (narrow tab spacing, so
   all four fit in the 380 px panel).
+- **Bed view zoom/pan** (`Bed.tsx`): mouse wheel zooms around the cursor, dragging pans (only after
+  4 px of movement, so clicks on wells still select them; only the click right after a pan is
+  swallowed). Toolbar at the top right: zoom in/out, **SVG** (zoom to the placed drawing),
+  **Work area**, and zoom %. Grid and border lines don't scale, labels keep their screen size,
+  and a 10 mm grid appears when zoomed in.
+- **No layout name in the header or status bar.** The working well layout belongs to the project.
+  A layout name only matters when saving to the library (Save as suggests the project name).
 - App state lives in `App.tsx`. Menu actions go through `onMenu`. Wells can be selected
   in the table or by clicking them on the bed.
 - Avoid props that are deprecated in antd 6: `Alert message` → `title`, `Drawer width` → `size`,

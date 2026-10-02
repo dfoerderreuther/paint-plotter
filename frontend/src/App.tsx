@@ -119,8 +119,6 @@ export default function App() {
 
   // Well layout
   const [layout, setLayout] = useState<WellLayout>(newLayout)
-  // Layout as of the last New / Open / Save, to show unsaved changes.
-  const [cleanJson, setCleanJson] = useState(() => JSON.stringify(newLayout()))
   const [savedNames, setSavedNames] = useState<string[]>([])
   const [layoutWarnings, setLayoutWarnings] = useState<string[]>([])
   const [selectedWell, setSelectedWell] = useState<string | null>(null)
@@ -161,7 +159,6 @@ export default function App() {
   )
   const projectDirty = !!projectJson && projectJson !== savedProjectJson
 
-  const layoutDirty = cleanJson !== JSON.stringify(layout)
 
   useEffect(() => {
     fetchConfig().then(setConfig, (e: Error) => setError(e.message))
@@ -180,7 +177,6 @@ export default function App() {
     setColorMatches([])
     setPaintSettings(settings)
     setLayout(p.layout)
-    setCleanJson(JSON.stringify(p.layout))
     setSelectedWell(null)
     setPlan(null)
     setSavedProjectJson(projectJsonOf({ ...p, paint_settings: settings }))
@@ -360,7 +356,6 @@ export default function App() {
     const l = await run(() => getWellLayout(name))
     if (!l) return
     setLayout(l)
-    setCleanJson(JSON.stringify(l))
     setSelectedWell(null)
     setDialog(null)
     setTab('wells')
@@ -370,7 +365,6 @@ export default function App() {
     const l = { ...layout, name }
     if (await run(() => saveWellLayout(l), () => `Saved layout '${name}'`)) {
       setLayout(l)
-      setCleanJson(JSON.stringify(l))
       setDialog(null)
       listWellLayouts().then(setSavedNames, () => {})
     }
@@ -454,7 +448,6 @@ export default function App() {
         return setDialog('project-rename')
       case 'layout-new':
         setLayout(newLayout())
-        setCleanJson(JSON.stringify(newLayout()))
         setSelectedWell(null)
         return setTab('wells')
       case 'layout-open':
@@ -465,7 +458,7 @@ export default function App() {
       case 'layout-save-as':
         return setDialog('layout-save-as')
       case 'export-pencil':
-        return run(() => downloadWellLayoutGcode(layout), (f) => `Downloaded ${f}`)
+        return run(() => downloadWellLayoutGcode(layout, projectName), (f) => `Downloaded ${f}`)
       case 'export-zip':
         return downloadZip()
       case 'export-project':
@@ -507,10 +500,6 @@ export default function App() {
             </Tooltip>
           )}
           {fileName && <Tag icon={<PictureOutlined />}>{fileName}</Tag>}
-          <Tag icon={<BgColorsOutlined />}>
-            {layout.name}
-            {layoutDirty && ' •'}
-          </Tag>
         </Flex>
       </Header>
 
@@ -604,9 +593,9 @@ export default function App() {
                         onDownloadZip={downloadZip}
                         onSaveToProject={saveToProject}
                         onDownloadPencil={() =>
-                          run(() => downloadWellLayoutGcode(layout), (f) => `Downloaded ${f}`)
+                          run(() => downloadWellLayoutGcode(layout, projectName), (f) => `Downloaded ${f}`)
                         }
-                        getPencilGcode={() => wellLayoutGcodeText(layout)}
+                        getPencilGcode={() => wellLayoutGcodeText(layout, projectName)}
                         hasWells={layout.wells.length > 0}
                         showToolpaths={showToolpaths}
                         onShowToolpathsChange={setShowToolpaths}
@@ -626,7 +615,11 @@ export default function App() {
           {!config && !error && <Spin style={{ margin: 32 }} />}
           {config && (
             <div style={{ position: 'absolute', inset: 16 }}>
-              <Bed widthMm={config.work_area.width_mm} heightMm={config.work_area.height_mm}>
+              <Bed
+                widthMm={config.work_area.width_mm}
+                heightMm={config.work_area.height_mm}
+                drawingRect={drawing && placedRect(drawing, placement)}
+              >
                 <WellsView layout={layout} selectedId={selectedWell} onSelect={selectWell} />
                 {drawing && (
                   <g opacity={plan && showToolpaths && tab === 'paint' ? 0.2 : 1}>
@@ -660,8 +653,6 @@ export default function App() {
         saveError={saveError}
         fileName={fileName}
         scale={drawing ? placement.scale : null}
-        layoutName={layout.name}
-        layoutDirty={layoutDirty}
         warningCount={layoutWarnings.length}
         colorsAssigned={drawing ? [drawingColors.filter((c) => colorMap[c]).length, drawingColors.length] : null}
         workArea={config ? `${config.work_area.width_mm} × ${config.work_area.height_mm} mm` : '–'}
@@ -714,7 +705,7 @@ export default function App() {
       <SaveLayoutModal
         key={dialog === 'layout-save-as' ? `save-${layout.name}` : 'save-closed'}
         open={dialog === 'layout-save-as'}
-        initialName={layout.name}
+        initialName={layout.name === newLayout().name ? (projectName ?? '') : layout.name}
         saved={savedNames}
         onClose={() => setDialog(null)}
         onSave={saveLayout}

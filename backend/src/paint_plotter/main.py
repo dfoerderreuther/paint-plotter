@@ -104,13 +104,18 @@ def arrange_well_layout(req: ArrangeRequest) -> WellLayout:
     return arrange_palette(req.layout, req.colors, load_config(), req.drawing)
 
 
+def pencil_filename(name: str) -> str:
+    """The pencil file is named after the project (or the layout, without a project)."""
+    return f"01_{safe_name(name)}_pencil.gcode"
+
+
 @app.post("/api/well-layouts/gcode", response_class=PlainTextResponse)
-def well_layout_gcode(layout: WellLayout) -> PlainTextResponse:
+def well_layout_gcode(layout: WellLayout, project: str | None = None) -> PlainTextResponse:
     try:
         gcode = layout_gcode(layout, load_config())
     except GcodeError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
-    filename = f"01_layout_{safe_name(layout.name)}_pencil.gcode"
+    filename = pencil_filename(project or layout.name)
     return PlainTextResponse(gcode, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
@@ -142,7 +147,7 @@ def _export_files(req: PaintRequest) -> list[tuple[str, str]]:
     files: list[tuple[str, str]] = []
     pencil_name = None
     if req.layout.wells:
-        pencil_name = f"01_layout_{safe_name(req.layout.name)}_pencil.gcode"
+        pencil_name = pencil_filename(req.project_name or req.layout.name)
         try:
             files.append((pencil_name, layout_gcode(req.layout, load_config())))
         except GcodeError as e:

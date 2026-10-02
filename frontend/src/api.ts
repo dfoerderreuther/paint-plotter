@@ -115,8 +115,12 @@ async function downloadPost(url: string, body: unknown, fallback: string): Promi
   return filename
 }
 
-export const wellLayoutGcodeText = async (layout: WellLayout): Promise<string> => {
-  const res = await fetch('/api/well-layouts/gcode', json('POST', layout))
+/** `project` names the pencil file (01_<project>_pencil.gcode). */
+const pencilUrl = (project?: string | null) =>
+  '/api/well-layouts/gcode' + (project ? `?project=${encodeURIComponent(project)}` : '')
+
+export const wellLayoutGcodeText = async (layout: WellLayout, project?: string | null): Promise<string> => {
+  const res = await fetch(pencilUrl(project), json('POST', layout))
   if (!res.ok) await parse(res)
   return res.text()
 }
@@ -135,8 +139,8 @@ export async function copyText(text: string): Promise<void> {
   if (!ok) throw new Error('Copy to clipboard failed')
 }
 
-export const downloadWellLayoutGcode = (layout: WellLayout) =>
-  downloadPost('/api/well-layouts/gcode', layout, 'layout.gcode')
+export const downloadWellLayoutGcode = (layout: WellLayout, project?: string | null) =>
+  downloadPost(pencilUrl(project), layout, 'pencil.gcode')
 
 export interface ColorMatch {
   color: string

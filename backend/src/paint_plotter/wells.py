@@ -157,7 +157,7 @@ def label_bounds(well: Well) -> tuple[float, float, float, float] | None:
 
 
 def layout_gcode(layout: WellLayout, config: PlotterConfig) -> str:
-    g = GcodeWriter(config, f"well layout '{layout.name}'", tool="pencil")
+    g = GcodeWriter(config, "palette crosses", tool="pencil")
     for well in layout.wells:
         g.comment(f"well '{well.name}' {well.color}")
         g.polylines(well_outlines(well))
