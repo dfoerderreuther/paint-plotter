@@ -23,6 +23,7 @@ export type MenuAction =
   | 'layout-save-as'
   | 'export-pencil'
   | 'export-zip'
+  | 'export-project'
   | 'plotter-settings'
 
 type Items = NonNullable<MenuProps['items']>
@@ -58,6 +59,7 @@ const MENUS: { label: string; items: Items }[] = [
   {
     label: 'Export',
     items: [
+      { key: 'export-project', label: 'Save all G-code files in project folder', icon: <SaveOutlined /> },
       { key: 'export-zip', label: 'All painting files (.zip)', icon: <FileZipOutlined /> },
       { type: 'divider' },
       { key: 'export-pencil', label: 'Pencil G-code (palette crosses)', icon: <DownloadOutlined /> },

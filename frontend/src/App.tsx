@@ -25,6 +25,7 @@ import {
   matchColors,
   planPainting,
   renameProject,
+  saveGcodeToProject,
   saveProject,
   saveWellLayout,
   uploadProjectSvg,
@@ -429,6 +430,14 @@ export default function App() {
     return run(() => downloadPaintingZip(paintRequest), (f) => `Downloaded ${f}`)
   }
 
+  const saveToProject = () => {
+    if (cannotPaint || !paintRequest || !projectName) return message.warning(cannotPaint ?? 'Nothing to export')
+    return run(
+      () => saveGcodeToProject(projectName, paintRequest),
+      (r) => `Saved ${r.files.length} files to ${r.folder}`,
+    )
+  }
+
   const onMenu = (action: MenuAction) => {
     switch (action) {
       case 'load-svg':
@@ -459,6 +468,8 @@ export default function App() {
         return run(() => downloadWellLayoutGcode(layout), (f) => `Downloaded ${f}`)
       case 'export-zip':
         return downloadZip()
+      case 'export-project':
+        return saveToProject()
       case 'plotter-settings':
         return setDialog('plotter')
     }
@@ -591,6 +602,7 @@ export default function App() {
                         canGenerate={cannotPaint}
                         onGenerate={generate}
                         onDownloadZip={downloadZip}
+                        onSaveToProject={saveToProject}
                         onDownloadPencil={() =>
                           run(() => downloadWellLayoutGcode(layout), (f) => `Downloaded ${f}`)
                         }

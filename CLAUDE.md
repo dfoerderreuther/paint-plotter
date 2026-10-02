@@ -201,6 +201,9 @@ checking, a cross counts as a circle the size of the cross (the paint spot).
   into the project. Deleting the open project switches to "default".
 - An uploaded SVG is parsed before it is stored, so a broken file never replaces a good one.
 - The export zip is named after the project.
+- **Save all G-code in the project folder** (Export menu or Paint tab): writes the pencil file,
+  brush files and `steps.txt` to `data/projects/<name>/gcode/`. The previous export's `*.gcode`
+  and `steps.txt` are removed first (no stale files from removed wells). Other files there are kept.
 
 ## Color mapping (drawing color → well)
 

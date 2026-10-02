@@ -14,7 +14,7 @@ import {
   Tooltip,
   Typography,
 } from 'antd'
-import { CopyOutlined, DownloadOutlined, FileZipOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { CopyOutlined, DownloadOutlined, FileZipOutlined, SaveOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { copyText, saveBlob, type PaintFile, type PaintPlan, type PaintSettings } from '../api'
 import { Swatch } from './DrawingPanel'
 
@@ -28,6 +28,7 @@ interface PaintPanelProps {
   canGenerate: string | null // reason why not, or null
   onGenerate: () => void
   onDownloadZip: () => void
+  onSaveToProject: () => void
   onDownloadPencil: () => void
   /** Pencil G-code as text (for copying). */
   getPencilGcode: () => Promise<string>
@@ -297,9 +298,14 @@ export default function PaintPanel(p: PaintPanelProps) {
                 })),
               ]}
             />
-            <Button block icon={<FileZipOutlined />} onClick={p.onDownloadZip}>
-              Download all (.zip with steps.txt)
-            </Button>
+            <Flex vertical gap={8}>
+              <Button block type="primary" ghost icon={<SaveOutlined />} onClick={p.onSaveToProject}>
+                Save all in project folder
+              </Button>
+              <Button block icon={<FileZipOutlined />} onClick={p.onDownloadZip}>
+                Download all (.zip with steps.txt)
+              </Button>
+            </Flex>
           </Card>
         </>
       )}

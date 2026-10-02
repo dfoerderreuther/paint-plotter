@@ -3,6 +3,7 @@
     project.json  everything the user set up (placement, hidden layers, color choices,
                   paint settings, the working well layout)
     drawing.svg   the uploaded SVG (original file name kept in project.json)
+    gcode/        the last "save G-code to project folder" export
 
 The frontend autosaves the project; the drawing is re-read from drawing.svg on load.
 """
@@ -22,6 +23,7 @@ from paint_plotter.wells import WellLayout, safe_name
 DEFAULT_PROJECT = "default"
 SVG_FILE = "drawing.svg"
 PROJECT_FILE = "project.json"
+EXPORT_DIR = "gcode"
 
 
 class Project(BaseModel):
@@ -128,6 +130,20 @@ def rename(old: str, new: str) -> Project:
     _dir(old).rename(_dir(new))
     project = Project.model_validate_json((_dir(new) / PROJECT_FILE).read_text())
     return _write(project.model_copy(update={"name": new}))
+
+
+def write_export(name: str, files: list[tuple[str, str]]) -> Path:
+    """Replaces the project's gcode/ export with `files`. Only *.gcode and steps.txt from an
+    earlier export are removed, so stale files from removed wells don't linger."""
+    if not exists(name):
+        raise ProjectNotFound(f"Project {name!r} not found")
+    out = _dir(name) / EXPORT_DIR
+    out.mkdir(exist_ok=True)
+    for old in [*out.glob("*.gcode"), out / "steps.txt"]:
+        old.unlink(missing_ok=True)
+    for filename, content in files:
+        (out / filename).write_text(content)
+    return out.resolve()
 
 
 def delete(name: str) -> None:

@@ -260,6 +260,10 @@ export const deleteProject = async (name: string): Promise<true> => {
   return true
 }
 
+/** Writes all G-code files (and steps.txt) to data/projects/<name>/gcode/, replacing an older export. */
+export const saveGcodeToProject = (name: string, req: PaintRequest) =>
+  fetch(`${projectUrl(name)}/export`, json('POST', req)).then((r) => parse<{ folder: string; files: string[] }>(r))
+
 /** Stores the SVG in the project folder and returns the parsed drawing. */
 export function uploadProjectSvg(name: string, file: File): Promise<ProjectData> {
   const body = new FormData()

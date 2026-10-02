@@ -260,3 +260,27 @@ def test_plan_endpoint_out_of_bounds_is_422(request_all):
     req = request_all.model_copy(update={"placement": Placement(x=450, y=20, scale=1)})
     res = TestClient(app).post("/api/paint/plan", json=req.model_dump())
     assert res.status_code == 422
+
+
+def test_export_to_project_folder_replaces_old_export(request_all, data_dir):
+    client = TestClient(app)
+    client.post("/api/projects", json={"name": "p"})
+    out = data_dir / "projects" / "p" / "gcode"
+    out.mkdir(parents=True)
+    (out / "09_old_brush.gcode").write_text("stale")
+    (out / "notes.md").write_text("mine")  # not ours: must survive
+    res = client.post("/api/projects/p/export", json=request_all.model_dump())
+    assert res.status_code == 200
+    body = res.json()
+    assert body["folder"] == str(out.resolve())
+    assert body["files"][0] == "01_layout_t_pencil.gcode" and body["files"][-1] == "steps.txt"
+    on_disk = sorted(f.name for f in out.iterdir())
+    assert "09_old_brush.gcode" not in on_disk
+    assert "notes.md" in on_disk
+    assert set(body["files"]) <= set(on_disk)
+    assert (out / "02_1_ff0000_brush.gcode").read_text().startswith("; Paint Plotter")
+
+
+def test_export_to_missing_project_is_404(request_all):
+    res = TestClient(app).post("/api/projects/nope/export", json=request_all.model_dump())
+    assert res.status_code == 404

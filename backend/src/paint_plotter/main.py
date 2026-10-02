@@ -136,22 +136,29 @@ def paint_plan(req: PaintRequest) -> PaintPlan:
     return _plan(req)
 
 
+def _export_files(req: PaintRequest) -> list[tuple[str, str]]:
+    """All files of a painting: pencil layout (01, if there are wells), brush files (02…), steps.txt."""
+    plan = _plan(req)
+    files: list[tuple[str, str]] = []
+    pencil_name = None
+    if req.layout.wells:
+        pencil_name = f"01_layout_{safe_name(req.layout.name)}_pencil.gcode"
+        try:
+            files.append((pencil_name, layout_gcode(req.layout, load_config())))
+        except GcodeError as e:
+            raise HTTPException(status_code=422, detail=f"Pencil layout: {e}") from e
+    files += [(f.filename, f.gcode) for f in plan.files]
+    files.append(("steps.txt", steps_text(plan, req.layout, pencil_name)))
+    return files
+
+
 @app.post("/api/paint/export")
 def paint_export(req: PaintRequest) -> Response:
-    """All files of a painting as a zip: pencil layout (01), brush files (02…) and steps.txt."""
-    plan = _plan(req)
-    pencil_name = None
+    """All files of a painting as a zip."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        if req.layout.wells:
-            pencil_name = f"01_layout_{safe_name(req.layout.name)}_pencil.gcode"
-            try:
-                zf.writestr(pencil_name, layout_gcode(req.layout, load_config()))
-            except GcodeError as e:
-                raise HTTPException(status_code=422, detail=f"Pencil layout: {e}") from e
-        for f in plan.files:
-            zf.writestr(f.filename, f.gcode)
-        zf.writestr("steps.txt", steps_text(plan, req.layout, pencil_name))
+        for name, content in _export_files(req):
+            zf.writestr(name, content)
     filename = f"painting_{safe_name(req.project_name or req.layout.name)}.zip"
     return Response(
         buf.getvalue(),
@@ -213,6 +220,19 @@ def delete_project(name: str) -> None:
 @app.post("/api/projects/{name}/rename")
 def rename_project(name: str, body: ProjectName) -> Project:
     return _project_call(projects.rename, name, body.name.strip())
+
+
+class SavedExport(BaseModel):
+    folder: str
+    files: list[str]
+
+
+@app.post("/api/projects/{name}/export")
+def export_to_project(name: str, req: PaintRequest) -> SavedExport:
+    """Writes all files of the painting into data/projects/<name>/gcode/ (replacing an older export)."""
+    files = _export_files(req)
+    folder = _project_call(projects.write_export, name, files)
+    return SavedExport(folder=str(folder), files=[n for n, _ in files])
 
 
 @app.post("/api/projects/{name}/svg")
