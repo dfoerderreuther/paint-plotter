@@ -170,6 +170,8 @@ export interface PaintSettings {
     dot_jitter_mm: number
     /** Dots only: fresh paint after this many dots. */
     dots_per_dip: number
+    /** Dots only: dot centres reach the shape's edge (row of dots on the outline). */
+    dots_to_edge: boolean
   }
   dip: {
     mode: 'tap' | 'circle'
@@ -190,6 +192,7 @@ export const DEFAULT_PAINT_SETTINGS: PaintSettings = {
     dot_grid: 'hex',
     dot_jitter_mm: 0,
     dots_per_dip: 20,
+    dots_to_edge: false,
   },
   dip: { mode: 'tap', circle_radius_mm: 3, resume_overlap_mm: 0 },
 }

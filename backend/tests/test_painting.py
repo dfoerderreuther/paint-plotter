@@ -18,6 +18,8 @@ from paint_plotter.painting import (
     FillSettings,
     contour,
     dots,
+    dots_with_edge_row,
+    fill_gaps,
     PaintRequest,
     PaintSettings,
     Placement,
@@ -157,20 +159,95 @@ def test_dots_jitter_is_reproducible_and_stays_inside():
     assert all(area.buffer(1e-6).contains(Point_(p)) for p in a)
 
 
+def test_dots_to_edge_put_centres_on_the_outline():
+    area = Polygon(square(0, 0, 20))
+    pts = dots_with_edge_row(area, spacing=2.4, grid="hex", jitter=0, rng=random.Random(0))
+    boundary = area.exterior
+    on_edge = [p for p in pts if boundary.distance(Point_(p)) < 1e-6]
+    # edge row spaced ≤ spacing all around (perimeter 80 mm → ≥ 34 dots)
+    assert len(on_edge) >= math.ceil(80 / 2.4)
+    # every edge point is within half a spacing of an edge dot: the edge is reached everywhere
+    edge_cover = unary_union([Point_(p).buffer(1.2 + 1e-6) for p in on_edge])
+    assert edge_cover.contains(boundary)
+    # together with a 3 mm brush the whole shape is covered
+    covered = unary_union([Point_(p).buffer(1.5) for p in pts])
+    assert covered.contains(area.buffer(-0.01))
+    assert all(area.buffer(1e-6).contains(Point_(p)) for p in pts)
+
+
+def test_dots_to_edge_jitter_keeps_edge_dots_on_the_edge():
+    area = Polygon(square(0, 0, 20))
+    plain = dots_with_edge_row(area, 2.4, "hex", 0, random.Random(0))
+    jittered = dots_with_edge_row(area, 2.4, "hex", 0.5, random.Random(0))
+    on_edge = lambda pts: [p for p in pts if area.exterior.distance(Point_(p)) < 1e-6]  # noqa: E731
+    assert on_edge(jittered) == on_edge(plain)
+    assert jittered != plain
+
+
+def test_inside_dots_cover_the_shrunk_area_without_a_strip_left_over():
+    for size in (10, 13.7, 20, 31.3):
+        inset = Polygon(square(0, 0, size)).buffer(-1.5)
+        pts = dots(inset, 2.4, "hex", 0, random.Random(0))
+        covered = unary_union([Point_(p).buffer(1.5) for p in pts])
+        assert covered.contains(inset.buffer(-0.01)), size
+
+
+def test_plan_dots_to_edge_reaches_the_shape_edge(request_all):
+    fill = FillSettings(pattern="dots", dots_to_edge=True)
+    settings = request_all.settings.model_copy(update={"fill": fill})
+    plan = plan_painting(request_all.model_copy(update={"settings": settings}), CONFIG)
+    red = next(f for f in plan.files if f.well_color == "#ff0000")
+    big = Polygon([(30, 80), (80, 80), (80, 110), (30, 110)])  # red rect on the bed
+    centres = [Point_(st[0]) for st in red.strokes]
+    assert any(big.exterior.distance(c) < 1e-2 for c in centres)  # dots on the edge
+
+
 def test_tiny_area_gets_one_dot():
     pts = dots(Polygon(square(0, 0, 0.5)), 3, "hex", 0, random.Random(0))
     assert len(pts) == 1
 
 
-def test_dots_gap_warning(request_all):
-    fill = FillSettings(pattern="dots", dot_grid="square", overlap=0.2)
-    settings = request_all.settings.model_copy(update={"fill": fill})
-    plan = plan_painting(request_all.model_copy(update={"settings": settings}), CONFIG)
-    assert any("at least 30 % overlap for a square grid" in w for w in plan.warnings)
-    fill = FillSettings(pattern="dots", dot_grid="hex", overlap=0.2)
-    settings = request_all.settings.model_copy(update={"fill": fill})
-    plan = plan_painting(request_all.model_copy(update={"settings": settings}), CONFIG)
-    assert not any("gaps" in w for w in plan.warnings)
+def _plan_dots(request_all, **fill):
+    settings = request_all.settings.model_copy(update={"fill": FillSettings(pattern="dots", **fill)})
+    return plan_painting(request_all.model_copy(update={"settings": settings}), CONFIG)
+
+
+def _red_dots(plan):
+    red = next(f for f in plan.files if f.well_color == "#ff0000")
+    return [st[0] for st in red.strokes]
+
+
+@pytest.mark.parametrize("to_edge", [False, True])
+@pytest.mark.parametrize("jitter", [0, 0.6])
+def test_dots_cover_curved_shapes_completely(to_edge, jitter):
+    """Ellipse and circle, both modes, with and without jitter: no uncovered specks left."""
+    from shapely import affinity
+
+    r = 1.5
+    for area in (affinity.scale(Point_(0, 0).buffer(1, quad_segs=64), 37.5, 20), Point_(0, 0).buffer(25, quad_segs=64)):
+        target = area if to_edge else area.buffer(-r)
+        pts = dots_with_edge_row(target, 2.4, "hex", jitter, random.Random(0))
+        region = area if to_edge else target.buffer(r / 2).intersection(area)  # inside: scalloped edge strip
+        pts, _ = fill_gaps(pts, region, r, target)
+        assert all(target.buffer(1e-3).contains(Point_(p)) for p in pts)
+        covered = unary_union([Point_(p).buffer(r) for p in pts])
+        specks = _polygons(region.difference(covered))
+        assert all(g.area <= 0.05 + 1e-9 for g in specks), max(g.area for g in specks)
+
+
+def _polygons(geom):
+    return list(getattr(geom, "geoms", [geom])) if not geom.is_empty else []
+
+
+def test_negative_overlap_leaves_gaps_on_purpose(request_all):
+    dense = _red_dots(_plan_dots(request_all, overlap=0.2))
+    sparse_plan = _plan_dots(request_all, overlap=-1.0)  # spacing = 2 × brush
+    sparse = _red_dots(sparse_plan)
+    assert len(sparse) < len(dense) / 3
+    assert not any("extra dots" in w for w in sparse_plan.warnings)
+    # neighbours are about 2 brush widths apart: dabs don't touch
+    nearest = [min(math.dist(p, q) for q in sparse if q != p) for p in sparse[:50]]
+    assert min(nearest) > 3  # brush 3 mm
 
 
 def test_plan_with_dots_dips_every_n_dots(request_all):

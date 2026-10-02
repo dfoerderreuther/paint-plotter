@@ -84,10 +84,11 @@ export default function PaintPanel(p: PaintPanelProps) {
   const s = p.settings
   const set = (patch: Partial<PaintSettings>) => p.onSettingsChange({ ...s, ...patch })
   const setFill = (patch: Partial<PaintSettings['fill']>) => set({ fill: { ...s.fill, ...patch } })
+  // Negative overlap (dots only) spaces the dabs apart on purpose, e.g. for shading.
   const overlapInput = (width: string) => (
     <InputNumber
       suffix="% overlap"
-      min={0}
+      min={s.fill.pattern === 'dots' ? -200 : 0}
       max={90}
       step={5}
       value={Math.round(s.fill.overlap * 100)}
@@ -174,7 +175,7 @@ export default function PaintPanel(p: PaintPanelProps) {
             <>
               <Form.Item
                 label="Grid"
-                tooltip="Hex closes the gaps from ~14 % overlap, square from ~30 %."
+                tooltip="Hex covers fully from ~14 % overlap, square from ~30 %."
                 style={{ marginBottom: 8 }}
               >
                 <Segmented<PaintSettings['fill']['dot_grid']>
@@ -187,7 +188,11 @@ export default function PaintPanel(p: PaintPanelProps) {
                   onChange={(dot_grid) => setFill({ dot_grid })}
                 />
               </Form.Item>
-              <Form.Item label="Overlap and jitter" style={{ marginBottom: 8 }}>
+              <Form.Item
+                label="Overlap and jitter"
+                tooltip="Overlap below 0 % spaces the dots apart (e.g. −100 % = one brush width of space between dots) for lighter, shaded areas. Gaps are only filled with extra dots when the grid is meant to cover (hex ≥ 14 %, square ≥ 30 %)."
+                style={{ marginBottom: 8 }}
+              >
                 <Space.Compact block>
                   {overlapInput('50%')}
                   <Tooltip title="Random offset per dot for a hand-painted look (same every time)">
@@ -203,7 +208,7 @@ export default function PaintPanel(p: PaintPanelProps) {
                   </Tooltip>
                 </Space.Compact>
               </Form.Item>
-              <Form.Item label="Dots per dip" tooltip="Fresh paint after this many dots." style={{ marginBottom: 0 }}>
+              <Form.Item label="Dots per dip" tooltip="Fresh paint after this many dots." style={{ marginBottom: 8 }}>
                 <InputNumber
                   min={1}
                   step={5}
@@ -212,6 +217,16 @@ export default function PaintPanel(p: PaintPanelProps) {
                   style={{ width: '100%' }}
                 />
               </Form.Item>
+              <Tooltip title="A row of dots sits on the outline and the grid fills the inside. Paint goes about half a brush beyond the edge; dots may overlap there. Off: dots stay inside the shape.">
+                <Space>
+                  <Switch
+                    size="small"
+                    checked={s.fill.dots_to_edge}
+                    onChange={(dots_to_edge) => setFill({ dots_to_edge })}
+                  />
+                  <Typography.Text>Dot centres reach the edge</Typography.Text>
+                </Space>
+              </Tooltip>
             </>
           )}
         </Form>

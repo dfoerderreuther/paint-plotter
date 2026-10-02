@@ -236,12 +236,21 @@ checking, a cross counts as a circle the size of the cross (the paint spot).
   end and is joined to it when the connection is short and inside the area (near-spiral, few lifts).
   After the last ring, one more ring half a brush further in closes any gap in the middle.
   `outline` and `angle_deg` don't apply.
-- **Fill pattern `dots`:** brush dabs (travel, down, up) on a **hex** or **square** grid
-  with spacing `brush × (1 − overlap)`, in zig-zag rows. Optional `dot_jitter_mm` gives a random
-  offset that is reproducible (fixed seed) and stays inside the area. Areas too small for the
-  grid get one dot. Fresh paint every **`dots_per_dip`** dots (not paint-per-dip distance).
-  Dots are painted before the lines. A note appears if the overlap leaves gaps (hex needs
-  ≥ 14 %, square ≥ 30 %). Jitter also opens small gaps, so give it more overlap.
+- **Fill pattern `dots`:** brush dabs (travel, down, up). Per shape: an **edge row** of dots
+  along the outline (spaced ≤ spacing), then a **hex** or **square** grid inside it (on the shape
+  shrunk by half a spacing; rows/columns spread evenly over the shape so no strip is left over).
+  - Edge row position: half a brush **inside** the outline (default; dabs touch the edge from
+    inside, leaving a scalloped edge), or **`dots_to_edge`**: dot centres **on** the outline (paint
+    goes half a brush beyond the edge; dots may overlap there). Thinner-than-brush shapes always
+    use their own outline.
+  - Spacing `brush × (1 − overlap)`. **Negative overlap** (down to −200 %, dots only in the UI)
+    spaces dabs apart on purpose, for **shading**.
+  - **Gap filling:** only when the grid is meant to cover (hex ≥ ~14 %, square ≥ ~30 % overlap),
+    uncovered specks (> 0.05 mm², at edges, curves, jitter) get extra dots, inserted next to their
+    nearest dot in the painting order. Inside mode leaves the scalloped edge strip alone. Sparser
+    grids are never filled. A note appears if more than 10 % extra dots were needed.
+  - `dot_jitter_mm`: reproducible random offset (fixed seed) for inner dots only; edge dots stay put.
+  - Fresh paint every **`dots_per_dip`** dots. Dots are painted before the lines.
 - **Lines** (stroke layers): centre line only. A note appears if the line is > 1.5 × the brush width.
 - **Order per file:** outlines (nearest neighbour) → hatch → lines (nearest neighbour).
 - **Paint per dip:** dip at the start, then dip again every `paint_distance_mm` of painting.

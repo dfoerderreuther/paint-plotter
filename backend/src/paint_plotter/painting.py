@@ -22,7 +22,7 @@ from shapely import affinity
 from shapely.geometry import GeometryCollection, LineString, MultiLineString, MultiPolygon, Polygon
 from shapely.geometry import Point as Point_
 from shapely.geometry.base import BaseGeometry
-from shapely.ops import unary_union
+from shapely.ops import nearest_points, unary_union
 
 from paint_plotter.config import PlotterConfig
 from paint_plotter.gcode import GcodeWriter
@@ -44,12 +44,16 @@ class FillSettings(BaseModel):
     # dots: brush dabs (down, up) on a grid.
     pattern: Literal["hatch", "contour", "dots"] = "hatch"
     angle_deg: float = 45  # hatch only
-    # Overlap of neighbouring lines / dots, as a fraction of the brush width.
-    overlap: float = Field(default=0.2, ge=0, le=0.9)
+    # Overlap of neighbouring lines / dots, as a fraction of the brush width. Negative leaves
+    # gaps on purpose (e.g. sparse dots for shading): spacing = brush × (1 − overlap).
+    overlap: float = Field(default=0.2, ge=-2, le=0.9)
     # dots only: grid layout, random offset per dot (reproducible), dots between dips.
     dot_grid: Literal["hex", "square"] = "hex"
     dot_jitter_mm: float = Field(default=0, ge=0)
     dots_per_dip: int = Field(default=20, ge=1)
+    # dots only: dot centres reach the shape's edge (the edge row of dots sits on the outline,
+    # not half a brush inside it). Paint then goes half a brush beyond the edge.
+    dots_to_edge: bool = False
     # Paint the area's outline before hatching it (gives a clean edge). Contour always starts
     # with the outline, so this only affects hatch.
     outline: bool = True
@@ -203,13 +207,27 @@ def dots(area: BaseGeometry, spacing: float, grid: str, jitter: float, rng: rand
     if area.is_empty:
         return []
     minx, miny, maxx, maxy = area.bounds
-    row_step = spacing * math.sqrt(3) / 2 if grid == "hex" else spacing
+
+    def spread(lo: float, hi: float, step: float) -> tuple[float, int, float]:
+        """Start, count and step so points run from lo to hi evenly, at most `step` apart.
+        Narrower than one step: a single point in the middle."""
+        if hi - lo < step:
+            return (lo + hi) / 2, 1, 0.0
+        n = math.ceil((hi - lo) / step - 1e-9) + 1
+        return lo, n, (hi - lo) / (n - 1)
+
+    # Rows and columns are spread over the whole bounding box (a little denser than
+    # `spacing`, never sparser), so no strip is left over along one side.
+    y0, n_rows, step_y = spread(miny, maxy, spacing * math.sqrt(3) / 2 if grid == "hex" else spacing)
+    x0, n_cols, step_x = spread(minx, maxx, spacing)
     inside = area.buffer(1e-6)
     result: list[Point] = []
-    y, row = miny, 0
-    while y <= maxy + 1e-9:
-        x0 = minx + (spacing / 2 if grid == "hex" and row % 2 else 0)
-        xs = [x0 + i * spacing for i in range(int((maxx - x0) / spacing + 1e-9) + 1)]
+    for row in range(n_rows):
+        y = y0 + row * step_y
+        if grid == "hex" and row % 2 and n_cols > 1:
+            xs = [x0 + (i + 0.5) * step_x for i in range(n_cols - 1)]
+        else:
+            xs = [x0 + i * step_x for i in range(n_cols)]
         if row % 2:
             xs.reverse()
         for x in xs:
@@ -221,12 +239,61 @@ def dots(area: BaseGeometry, spacing: float, grid: str, jitter: float, rng: rand
                 if inside.contains(Point_(*q)):
                     p = q
             result.append(p)
-        y += row_step
-        row += 1
     if not result:
         c = area.representative_point()
         result.append((c.x, c.y))
     return result
+
+
+def edge_dots(area: BaseGeometry, spacing: float) -> list[Point]:
+    """Dots centred on the area's outline(s), evenly spaced at most `spacing` apart."""
+    result: list[Point] = []
+    for ring in outlines(area):
+        line = LineString(ring)
+        n = max(1, math.ceil(line.length / spacing))
+        result.extend((p.x, p.y) for p in (line.interpolate(i * line.length / n) for i in range(n)))
+    return result
+
+
+def dots_with_edge_row(area: BaseGeometry, spacing: float, grid: str, jitter: float, rng: random.Random) -> list[Point]:
+    """A row of dots on the area's outline, then the grid on the area shrunk by half a spacing
+    (so it doesn't crowd the edge row). Only the inner dots are jittered."""
+    if area.is_empty:
+        return []
+    inner = area.buffer(-spacing / 2)
+    inner_dots = dots(inner, spacing, grid, jitter, rng) if not inner.is_empty else []
+    return edge_dots(area, spacing) + inner_dots
+
+
+GAP_MIN_AREA_MM2 = 0.05  # smaller uncovered specks are ignored
+GAP_MAX_ROUNDS = 10
+
+
+def fill_gaps(
+    points: list[Point], region: BaseGeometry, radius: float, allowed: BaseGeometry
+) -> tuple[list[Point], int]:
+    """Adds dots where dabs of `radius` around `points` leave parts of `region` uncovered.
+    New dots are placed in `allowed` (moved to its nearest point if needed) and go into the
+    sequence right after their nearest dot (short travel). Returns the dots and how many were added."""
+    if region.is_empty or not points:
+        return points, 0
+    pts = list(points)
+    added = 0
+    allowed_area = allowed.buffer(1e-6)
+    for _ in range(GAP_MAX_ROUNDS):
+        covered = unary_union([Point_(p).buffer(radius, quad_segs=8) for p in pts])
+        gaps = [g for g in _polygons_of(region.difference(covered)) if g.area > GAP_MIN_AREA_MM2]
+        if not gaps:
+            break
+        for g in gaps:
+            c = g.representative_point()
+            if not allowed_area.contains(c):
+                c = nearest_points(allowed, c)[0]
+            new = (c.x, c.y)
+            i = min(range(len(pts)), key=lambda j: math.dist(pts[j], new))
+            pts.insert(i + 1, new)
+            added += 1
+    return pts, added
 
 
 def _ring_from(ring: Polyline, pos: Point) -> Polyline:
@@ -387,12 +454,11 @@ def plan_painting(req: PaintRequest, config: PlotterConfig) -> PaintPlan:
             )
 
     spacing = s.brush_width_mm * (1 - s.fill.overlap)
-    if s.fill.pattern == "dots":
-        # Round dabs only close the gaps when spacing ≤ brush × √3/2 (hex) or brush × √2/2 (square).
-        max_spacing = s.brush_width_mm * (math.sqrt(3) / 2 if s.fill.dot_grid == "hex" else math.sqrt(2) / 2)
-        if spacing > max_spacing + 1e-9:
-            need = math.ceil((1 - max_spacing / s.brush_width_mm) * 100)
-            warnings.append(f"Dots leave gaps: use at least {need} % overlap for a {s.fill.dot_grid} grid")
+    # Dots are meant to cover the area only if the grid itself closes the gaps (hex from ~14 %,
+    # square from ~30 % overlap). Then leftover specks (edges, curves, jitter) are filled;
+    # sparser grids (incl. negative overlap, for shading) are left as they are.
+    max_cover_spacing = s.brush_width_mm * (math.sqrt(3) / 2 if s.fill.dot_grid == "hex" else math.sqrt(2) / 2)
+    dots_should_cover = spacing <= max_cover_spacing + 1e-9
     files: list[PaintFile] = []
     for n, (well_id, layers) in enumerate(groups.items()):
         well = wells[well_id]
@@ -400,6 +466,7 @@ def plan_painting(req: PaintRequest, config: PlotterConfig) -> PaintPlan:
         fill_strokes: list[Polyline] = []
         line_strokes: list[Polyline] = []
         dot_points: list[Point] = []
+        gap_dots = 0
         rng = random.Random(DOT_SEED)
         for layer in layers:
             paths = [_place(p, req.placement) for p in layer.paths]
@@ -408,12 +475,22 @@ def plan_painting(req: PaintRequest, config: PlotterConfig) -> PaintPlan:
                 continue
             area = fill_area(paths)
             inset = area.buffer(-s.brush_width_mm / 2)
+            if s.fill.pattern == "dots":
+                # Edge row on the outline (to edge) or half a brush inside it, grid inside.
+                # Shapes thinner than the brush: dots along their own edge.
+                target = area if s.fill.dots_to_edge or inset.is_empty else inset
+                pts = dots_with_edge_row(target, spacing, s.fill.dot_grid, s.fill.dot_jitter_mm, rng)
+                if dots_should_cover:
+                    # Inside: round dabs on the inner edge row only touch the edge at their centres,
+                    # so a scalloped strip along the edge stays free; only fill real holes.
+                    region = area if target is area else target.buffer(s.brush_width_mm / 4).intersection(area)
+                    pts, added = fill_gaps(pts, region, s.brush_width_mm / 2, target)
+                    gap_dots += added
+                dot_points.extend(pts)
+                continue
             if inset.is_empty:
                 # Thinner than the brush: at least paint along its edge.
                 outline_strokes.extend(outlines(area))
-                continue
-            if s.fill.pattern == "dots":
-                dot_points.extend(dots(inset, spacing, s.fill.dot_grid, s.fill.dot_jitter_mm, rng))
                 continue
             if s.fill.pattern == "contour":
                 start = fill_strokes[-1][-1] if fill_strokes else (well.x, well.y)
@@ -435,6 +512,10 @@ def plan_painting(req: PaintRequest, config: PlotterConfig) -> PaintPlan:
         colors = list(dict.fromkeys(layer.color for layer in layers))
         g = GcodeWriter(config, f"paint with '{well.name}' {well.color}", tool=f"brush {s.brush_width_mm:g} mm")
         g.comment(f"drawing colors: {', '.join(colors)}")
+        if dot_points and gap_dots > 0.1 * len(dot_points):
+            warnings.append(
+                f"{well.name}: {gap_dots} extra dots were added to close gaps; more overlap gives a more even grid"
+            )
         dips = 0
         painted: list[Polyline] = []
         # Dots first (fresh paint every `dots_per_dip` dots), then strokes.
