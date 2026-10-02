@@ -18,7 +18,6 @@ from paint_plotter.painting import (
     FillSettings,
     contour,
     dots,
-    dots_with_edge_row,
     fill_gaps,
     PaintRequest,
     PaintSettings,
@@ -159,47 +158,36 @@ def test_dots_jitter_is_reproducible_and_stays_inside():
     assert all(area.buffer(1e-6).contains(Point_(p)) for p in a)
 
 
-def test_dots_to_edge_put_centres_on_the_outline():
-    area = Polygon(square(0, 0, 20))
-    pts = dots_with_edge_row(area, spacing=2.4, grid="hex", jitter=0, rng=random.Random(0))
-    boundary = area.exterior
-    on_edge = [p for p in pts if boundary.distance(Point_(p)) < 1e-6]
-    # edge row spaced ≤ spacing all around (perimeter 80 mm → ≥ 34 dots)
-    assert len(on_edge) >= math.ceil(80 / 2.4)
-    # every edge point is within half a spacing of an edge dot: the edge is reached everywhere
-    edge_cover = unary_union([Point_(p).buffer(1.2 + 1e-6) for p in on_edge])
-    assert edge_cover.contains(boundary)
-    # together with a 3 mm brush the whole shape is covered
-    covered = unary_union([Point_(p).buffer(1.5) for p in pts])
-    assert covered.contains(area.buffer(-0.01))
-    assert all(area.buffer(1e-6).contains(Point_(p)) for p in pts)
+@pytest.mark.parametrize("grid", ["hex", "square"])
+def test_dots_form_a_regular_lattice(grid):
+    """No extra rows: every dot's nearest neighbour is exactly one spacing away."""
+    from shapely import affinity
+
+    area = affinity.scale(Point_(0, 0).buffer(1, quad_segs=64), 30, 18)
+    pts = dots(area, 4.0, grid, 0, random.Random(0))
+    nearest = [min(math.dist(p, q) for q in pts if q != p) for p in pts]
+    assert nearest == pytest.approx([4.0] * len(pts))
 
 
-def test_dots_to_edge_jitter_keeps_edge_dots_on_the_edge():
-    area = Polygon(square(0, 0, 20))
-    plain = dots_with_edge_row(area, 2.4, "hex", 0, random.Random(0))
-    jittered = dots_with_edge_row(area, 2.4, "hex", 0.5, random.Random(0))
-    on_edge = lambda pts: [p for p in pts if area.exterior.distance(Point_(p)) < 1e-6]  # noqa: E731
-    assert on_edge(jittered) == on_edge(plain)
-    assert jittered != plain
+def test_lattice_is_shared_between_shapes():
+    a = dots(Polygon(square(0, 0, 10)), 2.5, "hex", 0, random.Random(0))
+    b = dots(Polygon(square(12.3, 0, 10)), 2.5, "hex", 0, random.Random(0))
+    rows_a = {round(y, 6) for _, y in a}
+    rows_b = {round(y, 6) for _, y in b}
+    assert rows_a == rows_b  # same rows in both shapes
+    # x positions in a row continue the same lattice (multiples of the spacing, hex rows offset by half)
+    for x, y in a + b:
+        k = round(y / (2.5 * math.sqrt(3) / 2))
+        assert ((x - (1.25 if k % 2 else 0)) / 2.5) == pytest.approx(round((x - (1.25 if k % 2 else 0)) / 2.5))
 
 
-def test_inside_dots_cover_the_shrunk_area_without_a_strip_left_over():
-    for size in (10, 13.7, 20, 31.3):
-        inset = Polygon(square(0, 0, size)).buffer(-1.5)
-        pts = dots(inset, 2.4, "hex", 0, random.Random(0))
-        covered = unary_union([Point_(p).buffer(1.5) for p in pts])
-        assert covered.contains(inset.buffer(-0.01)), size
-
-
-def test_plan_dots_to_edge_reaches_the_shape_edge(request_all):
-    fill = FillSettings(pattern="dots", dots_to_edge=True)
-    settings = request_all.settings.model_copy(update={"fill": fill})
-    plan = plan_painting(request_all.model_copy(update={"settings": settings}), CONFIG)
-    red = next(f for f in plan.files if f.well_color == "#ff0000")
+def test_plan_dots_inside_vs_to_edge(request_all):
     big = Polygon([(30, 80), (80, 80), (80, 110), (30, 110)])  # red rect on the bed
-    centres = [Point_(st[0]) for st in red.strokes]
-    assert any(big.exterior.distance(c) < 1e-2 for c in centres)  # dots on the edge
+    edge_dist = lambda plan: [big.exterior.distance(Point_(c)) for c in _red_dots(plan) if big.contains(Point_(c)) or big.exterior.distance(Point_(c)) < 1e-6]  # noqa: E731
+    inside = edge_dist(_plan_dots(request_all, dots_to_edge=False, overlap=-0.5))
+    to_edge = edge_dist(_plan_dots(request_all, dots_to_edge=True, overlap=-0.5))
+    assert min(inside) >= 1.5 - 1e-6  # dabs stay inside the shape
+    assert min(to_edge) < 1.5  # centres come closer to the edge than half a brush
 
 
 def test_tiny_area_gets_one_dot():
@@ -226,7 +214,7 @@ def test_dots_cover_curved_shapes_completely(to_edge, jitter):
     r = 1.5
     for area in (affinity.scale(Point_(0, 0).buffer(1, quad_segs=64), 37.5, 20), Point_(0, 0).buffer(25, quad_segs=64)):
         target = area if to_edge else area.buffer(-r)
-        pts = dots_with_edge_row(target, 2.4, "hex", jitter, random.Random(0))
+        pts = dots(target, 2.4, "hex", jitter, random.Random(0))
         region = area if to_edge else target.buffer(r / 2).intersection(area)  # inside: scalloped edge strip
         pts, _ = fill_gaps(pts, region, r, target)
         assert all(target.buffer(1e-3).contains(Point_(p)) for p in pts)

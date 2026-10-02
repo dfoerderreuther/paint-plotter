@@ -51,8 +51,8 @@ class FillSettings(BaseModel):
     dot_grid: Literal["hex", "square"] = "hex"
     dot_jitter_mm: float = Field(default=0, ge=0)
     dots_per_dip: int = Field(default=20, ge=1)
-    # dots only: dot centres reach the shape's edge (the edge row of dots sits on the outline,
-    # not half a brush inside it). Paint then goes half a brush beyond the edge.
+    # dots only: dot centres may reach the shape's edge (lattice cut out of the full shape, not
+    # the shape shrunk by half a brush). Paint then goes up to half a brush beyond the edge.
     dots_to_edge: bool = False
     # Paint the area's outline before hatching it (gives a clean edge). Contour always starts
     # with the outline, so this only affects hatch.
@@ -202,33 +202,22 @@ DOT_SEED = 0  # jitter is random but reproducible
 
 
 def dots(area: BaseGeometry, spacing: float, grid: str, jitter: float, rng: random.Random) -> list[Point]:
-    """Dab positions inside the area: rows of a hex or square grid, in zig-zag order.
-    Areas too small for the grid still get one dot."""
+    """Dab positions: a regular hex or square lattice anchored at the machine origin, cut out
+    by the area, in zig-zag rows. One shared lattice keeps the pattern even inside a shape and
+    continuous across shapes. Areas the lattice misses still get one dot."""
     if area.is_empty:
         return []
     minx, miny, maxx, maxy = area.bounds
-
-    def spread(lo: float, hi: float, step: float) -> tuple[float, int, float]:
-        """Start, count and step so points run from lo to hi evenly, at most `step` apart.
-        Narrower than one step: a single point in the middle."""
-        if hi - lo < step:
-            return (lo + hi) / 2, 1, 0.0
-        n = math.ceil((hi - lo) / step - 1e-9) + 1
-        return lo, n, (hi - lo) / (n - 1)
-
-    # Rows and columns are spread over the whole bounding box (a little denser than
-    # `spacing`, never sparser), so no strip is left over along one side.
-    y0, n_rows, step_y = spread(miny, maxy, spacing * math.sqrt(3) / 2 if grid == "hex" else spacing)
-    x0, n_cols, step_x = spread(minx, maxx, spacing)
+    row_step = spacing * math.sqrt(3) / 2 if grid == "hex" else spacing
     inside = area.buffer(1e-6)
     result: list[Point] = []
-    for row in range(n_rows):
-        y = y0 + row * step_y
-        if grid == "hex" and row % 2 and n_cols > 1:
-            xs = [x0 + (i + 0.5) * step_x for i in range(n_cols - 1)]
-        else:
-            xs = [x0 + i * step_x for i in range(n_cols)]
-        if row % 2:
+    first_row = math.ceil(miny / row_step - 1e-9)
+    for k in range(first_row, math.floor(maxy / row_step + 1e-9) + 1):
+        y = k * row_step
+        offset = spacing / 2 if grid == "hex" and k % 2 else 0.0
+        js = range(math.ceil((minx - offset) / spacing - 1e-9), math.floor((maxx - offset) / spacing + 1e-9) + 1)
+        xs = [j * spacing + offset for j in js]
+        if (k - first_row) % 2:
             xs.reverse()
         for x in xs:
             if not inside.contains(Point_(x, y)):
@@ -243,26 +232,6 @@ def dots(area: BaseGeometry, spacing: float, grid: str, jitter: float, rng: rand
         c = area.representative_point()
         result.append((c.x, c.y))
     return result
-
-
-def edge_dots(area: BaseGeometry, spacing: float) -> list[Point]:
-    """Dots centred on the area's outline(s), evenly spaced at most `spacing` apart."""
-    result: list[Point] = []
-    for ring in outlines(area):
-        line = LineString(ring)
-        n = max(1, math.ceil(line.length / spacing))
-        result.extend((p.x, p.y) for p in (line.interpolate(i * line.length / n) for i in range(n)))
-    return result
-
-
-def dots_with_edge_row(area: BaseGeometry, spacing: float, grid: str, jitter: float, rng: random.Random) -> list[Point]:
-    """A row of dots on the area's outline, then the grid on the area shrunk by half a spacing
-    (so it doesn't crowd the edge row). Only the inner dots are jittered."""
-    if area.is_empty:
-        return []
-    inner = area.buffer(-spacing / 2)
-    inner_dots = dots(inner, spacing, grid, jitter, rng) if not inner.is_empty else []
-    return edge_dots(area, spacing) + inner_dots
 
 
 GAP_MIN_AREA_MM2 = 0.05  # smaller uncovered specks are ignored
@@ -476,13 +445,13 @@ def plan_painting(req: PaintRequest, config: PlotterConfig) -> PaintPlan:
             area = fill_area(paths)
             inset = area.buffer(-s.brush_width_mm / 2)
             if s.fill.pattern == "dots":
-                # Edge row on the outline (to edge) or half a brush inside it, grid inside.
-                # Shapes thinner than the brush: dots along their own edge.
+                # The lattice is cut out of the shape (to edge) or the shape shrunk by half a
+                # brush (dabs stay inside). Shapes thinner than the brush use the full shape.
                 target = area if s.fill.dots_to_edge or inset.is_empty else inset
-                pts = dots_with_edge_row(target, spacing, s.fill.dot_grid, s.fill.dot_jitter_mm, rng)
+                pts = dots(target, spacing, s.fill.dot_grid, s.fill.dot_jitter_mm, rng)
                 if dots_should_cover:
-                    # Inside: round dabs on the inner edge row only touch the edge at their centres,
-                    # so a scalloped strip along the edge stays free; only fill real holes.
+                    # Inside: round dabs near the edge only touch it at points, so a scalloped
+                    # strip along the edge stays free; only fill real holes.
                     region = area if target is area else target.buffer(s.brush_width_mm / 4).intersection(area)
                     pts, added = fill_gaps(pts, region, s.brush_width_mm / 2, target)
                     gap_dots += added

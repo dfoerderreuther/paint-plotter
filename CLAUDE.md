@@ -236,13 +236,14 @@ checking, a cross counts as a circle the size of the cross (the paint spot).
   end and is joined to it when the connection is short and inside the area (near-spiral, few lifts).
   After the last ring, one more ring half a brush further in closes any gap in the middle.
   `outline` and `angle_deg` don't apply.
-- **Fill pattern `dots`:** brush dabs (travel, down, up). Per shape: an **edge row** of dots
-  along the outline (spaced ≤ spacing), then a **hex** or **square** grid inside it (on the shape
-  shrunk by half a spacing; rows/columns spread evenly over the shape so no strip is left over).
-  - Edge row position: half a brush **inside** the outline (default; dabs touch the edge from
-    inside, leaving a scalloped edge), or **`dots_to_edge`**: dot centres **on** the outline (paint
-    goes half a brush beyond the edge; dots may overlap there). Thinner-than-brush shapes always
-    use their own outline.
+- **Fill pattern `dots`:** brush dabs (travel, down, up) on a **regular hex or square lattice
+  anchored at the machine origin (0,0)**, cut out by the shape, in zig-zag rows. The spacing is
+  never stretched, there are **no extra edge rows** (they made the pattern irregular), and
+  neighbouring shapes continue the same lattice.
+  - The lattice is cut from the shape shrunk by half a brush (default: dabs stay inside, with a
+    scalloped edge), or with **`dots_to_edge`** from the full shape (centres may reach the edge,
+    paint up to half a brush beyond it). Thinner-than-brush shapes use the full shape. Shapes the
+    lattice misses get one dot.
   - Spacing `brush × (1 − overlap)`. **Negative overlap** (down to −200 %, dots only in the UI)
     spaces dabs apart on purpose, for **shading**.
   - **Gap filling:** only when the grid is meant to cover (hex ≥ ~14 %, square ≥ ~30 % overlap),
