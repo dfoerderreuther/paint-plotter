@@ -73,7 +73,7 @@ data/                       git-ignored user data (see "Projects")
 5. **Generate G-code** for the plotter.
    - **One painting can produce several G-code files.** A new file starts wherever a manual
      step is needed (tool swap, brush change, paint refill, cleaning). Files are numbered in
-     order (e.g. `01_layout_pencil.gcode`, `02_red_brush.gcode`, …) and the app shows a
+     order (e.g. `01_<project>_pencil.gcode`, `02_<well>_brush.gcode`, …) and the app shows a
      list of the steps: which file to run, and what to do before it.
 
 ## Architecture (planned)
