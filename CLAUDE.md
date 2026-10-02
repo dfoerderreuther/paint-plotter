@@ -201,6 +201,11 @@ checking, a cross counts as a circle the size of the cross (the paint spot).
 - **Fill pattern `hatch`:** parallel lines at `angle_deg`, spaced `brush × (1 − overlap)`,
   in zig-zag order. Neighbouring lines are joined into one stroke when the connection stays
   inside the area. **`outline`** paints the shrunk outline first.
+- **Fill pattern `contour`:** the shrunk outline, then the outline stepped inwards by the same
+  spacing, ring by ring, until nothing is left. Each ring starts at the point nearest the previous
+  end and is joined to it when the connection is short and inside the area (near-spiral, few lifts).
+  After the last ring, one more ring half a brush further in closes any gap in the middle.
+  `outline` and `angle_deg` don't apply.
 - **Lines** (stroke layers): centre line only. A note appears if the line is > 1.5 × the brush width.
 - **Order per file:** outlines (nearest neighbour) → hatch → lines (nearest neighbour).
 - **Paint per dip:** dip at the start, then dip again every `paint_distance_mm` of painting.

@@ -7,11 +7,14 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from shapely.geometry import LineString, Polygon
+from shapely.ops import unary_union
 
 from paint_plotter.config import load_config
 from paint_plotter.main import app
 from paint_plotter.painting import (
     DipSettings,
+    FillSettings,
+    contour,
     PaintRequest,
     PaintSettings,
     Placement,
@@ -76,6 +79,51 @@ def test_hatch_angle():
     lines = hatch(Polygon(square(0, 0, 10)), spacing=2, angle_deg=90)
     xs = sorted({round(x, 6) for line in lines for x, _ in line})
     assert xs == [1, 3, 5, 7, 9]
+
+
+# ---------------------------------------------------------------- contour
+
+
+def test_contour_square_rings_inwards_as_one_spiral():
+    area = Polygon(square(0, 0, 20))
+    lines = contour(area, spacing=2, brush_radius=1.25, start=(0, 0))
+    assert len(lines) == 1  # each ring joined to the previous one
+    line = LineString(lines[0])
+    assert line.within(area.buffer(1e-6))
+    # outermost ring is the area's outline
+    xs = [x for x, _ in lines[0]]
+    assert min(xs) == pytest.approx(0) and max(xs) == pytest.approx(20)
+    # a brush of radius 1.25 along the path covers everything, including the middle
+    assert line.buffer(1.25).contains(area.buffer(-0.01))
+
+
+@pytest.mark.parametrize("size", [9.0, 10.0, 11.5, 13.0, 17.3])
+def test_contour_leaves_no_gap_in_the_middle(size):
+    area = Polygon(square(0, 0, size))
+    lines = contour(area, spacing=2.4, brush_radius=1.5, start=(0, 0))
+    covered = unary_union([LineString(l).buffer(1.5) for l in lines])
+    assert covered.contains(area.buffer(-0.01))
+
+
+def test_contour_with_hole_does_not_cross_the_hole():
+    area = Polygon(square(0, 0, 20)).difference(Polygon(square(7, 7, 6)))
+    lines = contour(area, spacing=1.5, brush_radius=1, start=(0, 0))
+    for line in lines:
+        assert LineString(line).within(area.buffer(1e-3))
+    covered = unary_union([LineString(l).buffer(1) for l in lines])
+    assert covered.contains(area.buffer(-0.01))
+
+
+def test_plan_with_contour_pattern(request_all):
+    settings = request_all.settings.model_copy(update={"fill": FillSettings(pattern="contour", overlap=0.2)})
+    plan = plan_painting(request_all.model_copy(update={"settings": settings}), CONFIG)
+    red = next(f for f in plan.files if f.well_color == "#ff0000")
+    big = Polygon([(30, 80), (80, 80), (80, 110), (30, 110)])
+    strokes_in_big = [s for s in red.strokes if LineString(s).intersects(big)]
+    assert all(LineString(s).within(big.buffer(-1.5 + 1e-3)) for s in strokes_in_big)
+    # brush paths (3 mm wide) cover the shrunk rectangle
+    covered = unary_union([LineString(s).buffer(1.5) for s in strokes_in_big])
+    assert covered.contains(big.buffer(-1.5))
 
 
 # ---------------------------------------------------------------- paint per dip

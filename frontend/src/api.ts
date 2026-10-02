@@ -134,7 +134,14 @@ export interface PaintSettings {
   brush_width_mm: number
   /** How far the brush paints per dip before it needs fresh paint. */
   paint_distance_mm: number
-  fill: { pattern: 'hatch'; angle_deg: number; overlap: number; outline: boolean }
+  fill: {
+    /** hatch: parallel lines at angle_deg. contour: outline, then step inwards ring by ring. */
+    pattern: 'hatch' | 'contour'
+    angle_deg: number
+    overlap: number
+    /** Hatch only (contour always starts with the outline). */
+    outline: boolean
+  }
   dip: { mode: 'tap' | 'circle'; circle_radius_mm: number }
 }
 

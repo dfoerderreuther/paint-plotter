@@ -38,11 +38,13 @@ SIMPLIFY_MM = 0.05  # max deviation when reducing points (fewer G-code lines)
 
 
 class FillSettings(BaseModel):
-    pattern: Literal["hatch"] = "hatch"
-    angle_deg: float = 45
+    # hatch: parallel lines at angle_deg. contour: outline, then step inwards ring by ring.
+    pattern: Literal["hatch", "contour"] = "hatch"
+    angle_deg: float = 45  # hatch only
     # Overlap of neighbouring hatch lines, as a fraction of the brush width.
     overlap: float = Field(default=0.2, ge=0, le=0.9)
-    # Paint the area's outline before hatching it (gives a clean edge).
+    # Paint the area's outline before hatching it (gives a clean edge). Contour always starts
+    # with the outline, so this only affects hatch.
     outline: bool = True
 
 
@@ -181,6 +183,49 @@ def hatch(area: BaseGeometry, spacing: float, angle_deg: float) -> list[Polyline
     return [list(affinity.rotate(LineString(p), angle_deg, origin=(0, 0)).coords) for p in result]
 
 
+def _ring_from(ring: Polyline, pos: Point) -> Polyline:
+    """Closed ring rotated to start (and end) at its vertex nearest to `pos`."""
+    pts = ring[:-1] if ring[0] == ring[-1] else ring
+    k = min(range(len(pts)), key=lambda i: math.dist(pts[i], pos))
+    return pts[k:] + pts[:k] + [pts[k]]
+
+
+def contour(area: BaseGeometry, spacing: float, brush_radius: float, start: Point) -> list[Polyline]:
+    """Outline of the area, then the outline shrunk by `spacing`, and so on until nothing is
+    left. Each ring starts near where the previous one ended and is joined to it when the
+    connection is short and stays inside the area (gives a near-continuous spiral)."""
+    if area.is_empty:
+        return []
+    inside = area.buffer(spacing * 0.01 + 1e-6)
+    result: list[Polyline] = []
+    pos = start
+
+    def paint_level(level: BaseGeometry) -> None:
+        nonlocal pos
+        rings = outlines(level)
+        # Nearest ring first within this level.
+        while rings:
+            i = min(range(len(rings)), key=lambda j: min(math.dist(pos, p) for p in rings[j]))
+            ring = _ring_from(rings.pop(i), pos)
+            if result and math.dist(pos, ring[0]) <= 2.5 * spacing and LineString([pos, ring[0]]).within(inside):
+                result[-1].extend(ring)
+            else:
+                result.append(ring)
+            pos = ring[-1]
+
+    current, last = area, area
+    while not current.is_empty:
+        paint_level(current)
+        last = current
+        current = current.buffer(-spacing, join_style="mitre", mitre_limit=2)
+    # The last ring paints `brush_radius` inwards; if its inside is wider, one more ring
+    # half a brush further in closes the gap in the middle.
+    leftover = last.buffer(-brush_radius, join_style="mitre", mitre_limit=2)
+    if not leftover.is_empty and leftover.area > 1e-6:
+        paint_level(leftover)
+    return result
+
+
 def order_nearest(paths: list[Polyline], start: Point) -> list[Polyline]:
     """Greedy nearest-neighbour ordering; paths may be reversed."""
     remaining = [p for p in paths if len(p) >= 2]
@@ -282,7 +327,7 @@ def plan_painting(req: PaintRequest, config: PlotterConfig) -> PaintPlan:
     for n, (well_id, layers) in enumerate(groups.items()):
         well = wells[well_id]
         outline_strokes: list[Polyline] = []
-        hatch_strokes: list[Polyline] = []
+        fill_strokes: list[Polyline] = []
         line_strokes: list[Polyline] = []
         for layer in layers:
             paths = [_place(p, req.placement) for p in layer.paths]
@@ -295,14 +340,18 @@ def plan_painting(req: PaintRequest, config: PlotterConfig) -> PaintPlan:
                 # Thinner than the brush: at least paint along its edge.
                 outline_strokes.extend(outlines(area))
                 continue
+            if s.fill.pattern == "contour":
+                start = fill_strokes[-1][-1] if fill_strokes else (well.x, well.y)
+                fill_strokes.extend(contour(inset, spacing, s.brush_width_mm / 2, start))
+                continue
             if s.fill.outline:
                 outline_strokes.extend(outlines(inset))
-            hatch_strokes.extend(hatch(inset, spacing, s.fill.angle_deg))
+            fill_strokes.extend(hatch(inset, spacing, s.fill.angle_deg))
 
-        # Outlines first, then the fill, then lines on top.
+        # Outlines (hatch only) first, then the fill, then lines on top.
         strokes = order_nearest(outline_strokes, (well.x, well.y))
         pos = strokes[-1][-1] if strokes else (well.x, well.y)
-        strokes += hatch_strokes
+        strokes += fill_strokes
         pos = strokes[-1][-1] if strokes else pos
         strokes += order_nearest(line_strokes, pos)
         strokes = [_simplify(st) for st in strokes]

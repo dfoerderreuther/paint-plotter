@@ -95,21 +95,52 @@ export default function PaintPanel(p: PaintPanelProps) {
       <Card size="small" title="Fill">
         <Form layout="vertical" size="small">
           <Form.Item label="Pattern" style={{ marginBottom: 8 }}>
-            <Select
+            <Select<PaintSettings['fill']['pattern']>
               value={s.fill.pattern}
-              options={[{ value: 'hatch', label: 'Hatch (parallel lines)' }]}
+              options={[
+                { value: 'hatch', label: 'Hatch (parallel lines)' },
+                { value: 'contour', label: 'Contour (outline inwards)' },
+              ]}
               onChange={(pattern) => set({ fill: { ...s.fill, pattern } })}
             />
           </Form.Item>
-          <Form.Item label="Angle and overlap" style={{ marginBottom: 8 }}>
-            <Space.Compact block>
-              <InputNumber
-                suffix="°"
-                value={s.fill.angle_deg}
-                step={15}
-                onChange={(v) => set({ fill: { ...s.fill, angle_deg: v ?? 0 } })}
-                style={{ width: '50%' }}
-              />
+          {s.fill.pattern === 'hatch' ? (
+            <>
+              <Form.Item label="Angle and overlap" style={{ marginBottom: 8 }}>
+                <Space.Compact block>
+                  <InputNumber
+                    suffix="°"
+                    value={s.fill.angle_deg}
+                    step={15}
+                    onChange={(v) => set({ fill: { ...s.fill, angle_deg: v ?? 0 } })}
+                    style={{ width: '50%' }}
+                  />
+                  <InputNumber
+                    suffix="% overlap"
+                    min={0}
+                    max={90}
+                    step={5}
+                    value={Math.round(s.fill.overlap * 100)}
+                    onChange={(v) => set({ fill: { ...s.fill, overlap: (v ?? 0) / 100 } })}
+                    style={{ width: '50%' }}
+                  />
+                </Space.Compact>
+              </Form.Item>
+              <Space>
+                <Switch
+                  size="small"
+                  checked={s.fill.outline}
+                  onChange={(outline) => set({ fill: { ...s.fill, outline } })}
+                />
+                <Typography.Text>Paint outline first</Typography.Text>
+              </Space>
+            </>
+          ) : (
+            <Form.Item
+              label="Overlap"
+              tooltip="Starts with the outline, then steps inwards by brush width minus overlap until the area is painted."
+              style={{ marginBottom: 0 }}
+            >
               <InputNumber
                 suffix="% overlap"
                 min={0}
@@ -117,14 +148,10 @@ export default function PaintPanel(p: PaintPanelProps) {
                 step={5}
                 value={Math.round(s.fill.overlap * 100)}
                 onChange={(v) => set({ fill: { ...s.fill, overlap: (v ?? 0) / 100 } })}
-                style={{ width: '50%' }}
+                style={{ width: '100%' }}
               />
-            </Space.Compact>
-          </Form.Item>
-          <Space>
-            <Switch size="small" checked={s.fill.outline} onChange={(outline) => set({ fill: { ...s.fill, outline } })} />
-            <Typography.Text>Paint outline first</Typography.Text>
-          </Space>
+            </Form.Item>
+          )}
         </Form>
       </Card>
 
