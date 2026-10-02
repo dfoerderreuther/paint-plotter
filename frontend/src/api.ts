@@ -96,19 +96,27 @@ export const checkWellLayout = (layout: WellLayout) =>
 export const arrangeWellLayout = (layout: WellLayout, colors: string[], drawing: Rect | null) =>
   fetch('/api/well-layouts/arrange', json('POST', { layout, colors, drawing })).then((r) => parse<WellLayout>(r))
 
-/** Fetches a G-code file and hands it to the browser as a download. */
-export async function downloadWellLayoutGcode(layout: WellLayout): Promise<string> {
-  const res = await fetch('/api/well-layouts/gcode', json('POST', layout))
-  if (!res.ok) await parse(res)
-  const filename = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? 'layout.gcode'
-  const url = URL.createObjectURL(await res.blob())
+/** Hands a blob to the browser as a file download. */
+export function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
   a.download = filename
   a.click()
   URL.revokeObjectURL(url)
+}
+
+/** POSTs `body` and downloads the response under the server's filename. */
+async function downloadPost(url: string, body: unknown, fallback: string): Promise<string> {
+  const res = await fetch(url, json('POST', body))
+  if (!res.ok) await parse(res)
+  const filename = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? fallback
+  saveBlob(await res.blob(), filename)
   return filename
 }
+
+export const downloadWellLayoutGcode = (layout: WellLayout) =>
+  downloadPost('/api/well-layouts/gcode', layout, 'layout.gcode')
 
 export interface ColorMatch {
   color: string
@@ -119,3 +127,55 @@ export interface ColorMatch {
 
 export const matchColors = (colors: string[], wells: Well[]) =>
   fetch('/api/colors/match', json('POST', { colors, wells })).then((r) => parse<ColorMatch[]>(r))
+
+// ---------------------------------------------------------------- painting
+
+export interface PaintSettings {
+  brush_width_mm: number
+  /** How far the brush paints per dip before it needs fresh paint. */
+  paint_distance_mm: number
+  fill: { pattern: 'hatch'; angle_deg: number; overlap: number; outline: boolean }
+  dip: { mode: 'tap' | 'circle'; circle_radius_mm: number }
+}
+
+export const DEFAULT_PAINT_SETTINGS: PaintSettings = {
+  brush_width_mm: 3,
+  paint_distance_mm: 150,
+  fill: { pattern: 'hatch', angle_deg: 45, overlap: 0.2, outline: true },
+  dip: { mode: 'tap', circle_radius_mm: 3 },
+}
+
+export interface PaintRequest {
+  layers: PaintLayer[]
+  placement: { x: number; y: number; scale: number }
+  layout: WellLayout
+  color_map: Record<string, string | null>
+  settings: PaintSettings
+}
+
+export interface PaintFile {
+  index: number
+  filename: string
+  well_id: string
+  well_name: string
+  well_color: string
+  colors: string[]
+  dips: number
+  paint_length_mm: number
+  travel_length_mm: number
+  estimated_seconds: number
+  /** Brush-down paths in machine coordinates, for the preview. */
+  strokes: Point[][]
+  gcode: string
+}
+
+export interface PaintPlan {
+  files: PaintFile[]
+  warnings: string[]
+}
+
+export const planPainting = (req: PaintRequest) =>
+  fetch('/api/paint/plan', json('POST', req)).then((r) => parse<PaintPlan>(r))
+
+/** Zip with the pencil layout (01), brush files (02…) and steps.txt. */
+export const downloadPaintingZip = (req: PaintRequest) => downloadPost('/api/paint/export', req, 'painting.zip')

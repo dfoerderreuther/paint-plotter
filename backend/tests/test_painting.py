@@ -1,0 +1,181 @@
+import io
+import math
+import re
+import zipfile
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+from shapely.geometry import LineString, Polygon
+
+from paint_plotter.config import load_config
+from paint_plotter.main import app
+from paint_plotter.painting import (
+    DipSettings,
+    PaintRequest,
+    PaintSettings,
+    Placement,
+    fill_area,
+    hatch,
+    plan_painting,
+    split_by_paint,
+)
+from paint_plotter.svg_import import read_svg
+from paint_plotter.wells import Rect, WellLayout, arrange_palette
+
+CONFIG = load_config()
+SAMPLE = Path(__file__).parent / "data" / "sample.svg"
+
+
+def square(x, y, s, reverse=False):
+    pts = [(x, y), (x + s, y), (x + s, y + s), (x, y + s), (x, y)]
+    return pts[::-1] if reverse else pts
+
+
+def length(path):
+    return sum(math.dist(a, b) for a, b in zip(path, path[1:]))
+
+
+# ---------------------------------------------------------------- fill area
+
+
+def test_nested_ring_is_a_hole():
+    area = fill_area([square(0, 0, 10), square(3, 3, 4, reverse=True)])
+    assert area.area == pytest.approx(100 - 16)
+
+
+def test_island_inside_hole_is_filled_again():
+    area = fill_area([square(0, 0, 10), square(2, 2, 6), square(4, 4, 2)])
+    assert area.area == pytest.approx(100 - 36 + 4)
+
+
+def test_overlapping_separate_shapes_are_united():
+    area = fill_area([square(0, 0, 10), square(5, 5, 10)])
+    assert area.area == pytest.approx(175)
+
+
+# ---------------------------------------------------------------- hatch
+
+
+def test_hatch_square_is_one_zigzag_inside_the_area():
+    area = Polygon(square(0, 0, 10))
+    lines = hatch(area, spacing=2, angle_deg=0)
+    assert len(lines) == 1  # joined into one stroke
+    ys = sorted({round(y, 6) for _, y in lines[0]})
+    assert ys == [1, 3, 5, 7, 9]
+    assert LineString(lines[0]).within(area.buffer(1e-6))
+
+
+def test_hatch_does_not_join_across_a_hole():
+    area = Polygon(square(0, 0, 10)).difference(Polygon(square(3, 0, 4)))  # U shape, open at the bottom
+    for line in hatch(area, spacing=1, angle_deg=0):
+        assert LineString(line).within(area.buffer(1e-3))
+
+
+def test_hatch_angle():
+    lines = hatch(Polygon(square(0, 0, 10)), spacing=2, angle_deg=90)
+    xs = sorted({round(x, 6) for line in lines for x, _ in line})
+    assert xs == [1, 3, 5, 7, 9]
+
+
+# ---------------------------------------------------------------- paint per dip
+
+
+def test_split_dips_every_paint_distance_and_continues():
+    stroke = [(0, 0), (25, 0)]
+    events = list(split_by_paint([stroke], 10))
+    kinds = [k for k, _ in events]
+    assert kinds == ["dip", "stroke", "dip", "stroke", "dip", "stroke"]
+    pieces = [p for k, p in events if k == "stroke"]
+    assert [length(p) for p in pieces] == pytest.approx([10, 10, 5])
+    assert pieces[1][0] == pieces[0][-1] and pieces[2][0] == pieces[1][-1]
+
+
+def test_split_carries_remaining_paint_to_next_stroke():
+    events = list(split_by_paint([[(0, 0), (6, 0)], [(0, 1), (6, 1)]], 10))
+    # 6 mm, then the rest of the paint (4 mm) on the second stroke, dip, the last 2 mm
+    assert [k for k, _ in events] == ["dip", "stroke", "stroke", "dip", "stroke"]
+    pieces = [p for k, p in events if k == "stroke"]
+    assert [length(p) for p in pieces] == pytest.approx([6, 4, 2])
+
+
+# ---------------------------------------------------------------- full plan
+
+
+@pytest.fixture(scope="module")
+def request_all():
+    with SAMPLE.open() as f:
+        drawing = read_svg(f)
+    colors = list(dict.fromkeys(l.color for l in drawing.layers))
+    placement = Placement(x=20, y=20, scale=1)
+    drawing_rect = Rect(x=20, y=20, width_mm=drawing.width_mm, height_mm=drawing.height_mm)
+    layout = arrange_palette(WellLayout(name="t"), colors, CONFIG, drawing_rect)
+    color_map = {w.color: w.id for w in layout.wells}
+    return PaintRequest(
+        layers=drawing.layers,
+        placement=placement,
+        layout=layout,
+        color_map=color_map,
+        settings=PaintSettings(brush_width_mm=3, paint_distance_mm=100),
+    )
+
+
+def test_plan_one_file_per_well(request_all):
+    plan = plan_painting(request_all, CONFIG)
+    assert [f.filename.split("_")[0] for f in plan.files] == ["02", "03", "04", "05", "06"]
+    assert all(f.dips >= 1 for f in plan.files)
+    assert plan.warnings == []
+
+
+def test_plan_gcode_in_bounds_and_dips_at_well(request_all):
+    plan = plan_painting(request_all, CONFIG)
+    red = next(f for f in plan.files if f.well_color == "#ff0000")
+    well = next(w for w in request_all.layout.wells if w.id == red.well_id)
+    pts = [(float(x), float(y)) for x, y in re.findall(r"X(-?[\d.]+) Y(-?[\d.]+)", red.gcode)]
+    assert all(0 <= x <= 500 and 0 <= y <= 500 for x, y in pts)
+    assert red.gcode.count("; dip into") == red.dips
+    assert (round(well.x, 2), round(well.y, 2)) in [(round(x, 2), round(y, 2)) for x, y in pts]
+    # paint per dip respected: total painted ≤ dips × distance
+    assert red.paint_length_mm <= red.dips * 100 + 1e-6
+
+
+def test_fill_strokes_stay_half_a_brush_inside(request_all):
+    plan = plan_painting(request_all, CONFIG)
+    red = next(f for f in plan.files if f.well_color == "#ff0000")
+    # Red rect: x 30..80, y 80..110 on the bed (SVG 10..60 / page-flipped, offset 20)
+    big = Polygon(square(30, 80, 50)).intersection(Polygon([(30, 80), (80, 80), (80, 110), (30, 110)]))
+    inner = big.buffer(-1.5 + 1e-3)
+    strokes_in_big = [s for s in red.strokes if LineString(s).intersects(big)]
+    assert strokes_in_big
+    assert all(LineString(s).within(inner) for s in strokes_in_big)
+
+
+def test_unmapped_colors_are_reported(request_all):
+    req = request_all.model_copy(update={"color_map": {**request_all.color_map, "#0000ff": None}})
+    plan = plan_painting(req, CONFIG)
+    assert len(plan.files) == 4
+    assert any("#0000ff" in w for w in plan.warnings)
+
+
+def test_circle_dip(request_all):
+    settings = request_all.settings.model_copy(update={"dip": DipSettings(mode="circle", circle_radius_mm=4)})
+    plan = plan_painting(request_all.model_copy(update={"settings": settings}), CONFIG)
+    f = plan.files[0]
+    well = next(w for w in request_all.layout.wells if w.id == f.well_id)
+    # the circle passes through (well.x + r, well.y)
+    assert f"X{well.x + 4:.2f}".rstrip("0").rstrip(".") in f.gcode
+
+
+def test_export_zip(request_all):
+    res = TestClient(app).post("/api/paint/export", json=request_all.model_dump())
+    assert res.status_code == 200
+    names = zipfile.ZipFile(io.BytesIO(res.content)).namelist()
+    assert names[0] == "01_layout_t_pencil.gcode"
+    assert "02_1_ff0000_brush.gcode" in names
+    assert "steps.txt" in names
+
+
+def test_plan_endpoint_out_of_bounds_is_422(request_all):
+    req = request_all.model_copy(update={"placement": Placement(x=450, y=20, scale=1)})
+    res = TestClient(app).post("/api/paint/plan", json=req.model_dump())
+    assert res.status_code == 422

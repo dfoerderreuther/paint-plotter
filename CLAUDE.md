@@ -19,6 +19,7 @@ backend/                    Python (uv) – FastAPI app, vpype
   src/paint_plotter/wells.py   Well layouts: model, checks, palette arrange, pencil G-code, storage
   src/paint_plotter/gcode.py   GcodeWriter (Marlin, Z up/down, soft limits, ends parked)
   src/paint_plotter/colors.py  CIELAB ΔE color matching, POST /api/colors/match
+  src/paint_plotter/painting.py  Brush paths + G-code per well, POST /api/paint/plan and /export (zip)
   tests/                    pytest (tests/data/sample.svg = test drawing)
 config/plotter.json         Plotter config (work area, Z up/down, feed rates)
 frontend/                   React + antd + TypeScript (Vite)
@@ -32,6 +33,8 @@ frontend/                   React + antd + TypeScript (Vite)
   src/components/PlotterDrawer.tsx Plotter settings drawer (read-only)
   src/components/ColorsPanel.tsx   Colors tab: drawing color → well mapping, paint preview
   src/colorMap.ts           Resolves the color → well mapping (choices + auto match)
+  src/components/PaintPanel.tsx    Paint tab: brush/fill/dip settings, generate, run order, downloads
+  src/components/ToolpathView.tsx  Brush paths on the bed at brush width
   src/components/StatusBar.tsx      Bottom status bar
   src/placement.ts          Drawing placement on the bed (offset + scale)
   src/components/WellsPanel.tsx  Wells tab: palette, wells table, selected-well editor
@@ -184,6 +187,33 @@ checking, a cross counts as a circle the size of the cross (the paint spot).
   and hides unpainted colors.
 - For now the mapping lives in frontend state only (not saved). It will be saved with projects.
 
+## Painting (brush paths and G-code)
+
+`painting.py`, settings in `PaintSettings` (options, extend there):
+- **Only visible layers** are painted (the frontend sends them). Colors mapped to
+  "Don't paint" are skipped and listed in the notes.
+- **One file per well** (`02_<well>_brush.gcode`, `03_…`, in drawing order of first
+  appearance). A new well means a manual brush change or clean, so it goes in a new file.
+- **Fill areas:** closed paths are combined nonzero-style. A ring nested an odd number of
+  times is a hole, because vpype splits compound paths. The area is **shrunk by half the
+  brush width** so the paint edge lands on the shape edge. Shapes thinner than the brush
+  are painted along their edge instead.
+- **Fill pattern `hatch`:** parallel lines at `angle_deg`, spaced `brush × (1 − overlap)`,
+  in zig-zag order. Neighbouring lines are joined into one stroke when the connection stays
+  inside the area. **`outline`** paints the shrunk outline first.
+- **Lines** (stroke layers): centre line only. A note appears if the line is > 1.5 × the brush width.
+- **Order per file:** outlines (nearest neighbour) → hatch → lines (nearest neighbour).
+- **Paint per dip:** dip at the start, then dip again every `paint_distance_mm` of painting.
+  Strokes are cut at that point and continue there after the dip. Leftover paint carries
+  over to the next stroke.
+- **Dip motion:** `tap` (down, up at the well centre) or `circle` (down, one circle of
+  `circle_radius_mm`, back to the centre, up).
+- Strokes are simplified to 0.05 mm, and moves outside the work area are refused (422 with message).
+- **Export zip:** `01_layout_<name>_pencil.gcode` (if there are wells), the brush files, and
+  `steps.txt` (what to do before each file). The time estimate uses only lengths and feed rates.
+- Not yet: knockout of overlapping colors (paint under later shapes is not removed),
+  more fill patterns, and painting order options.
+
 ## UI conventions
 
 - **antd 6** components throughout: the header menu bar uses click-triggered `Dropdown`s
@@ -237,8 +267,8 @@ checking, a cross counts as a circle the size of the cross (the paint spot).
 2. ✅ SVG upload and visualization
 3. ✅ Wells: palette page with crosses (auto-arranged), saved layouts, pencil "well layout" G-code
 4. ✅ Color mapping from SVG colors to wells (Colors tab)
-5. Toolpath planning: fill pattern, brush size, reloading after N mm of painting
-6. G-code generation, with several files per painting
+5. ✅ Toolpath planning: fill pattern, brush size, reloading after N mm of painting
+6. ✅ G-code generation, with several files per painting (zip with steps.txt)
 7. Preview and simulation of the G-code
 8. Testing on the real plotter via CNCjs, then calibration
 9. (Later, optional) Send files straight to CNCjs through its API

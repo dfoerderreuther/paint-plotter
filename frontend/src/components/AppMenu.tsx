@@ -4,6 +4,7 @@ import {
   DownloadOutlined,
   FileAddOutlined,
   FileImageOutlined,
+  FileZipOutlined,
   FolderOpenOutlined,
   SaveOutlined,
   SettingOutlined,
@@ -16,6 +17,7 @@ export type MenuAction =
   | 'layout-save'
   | 'layout-save-as'
   | 'export-pencil'
+  | 'export-zip'
   | 'plotter-settings'
 
 type Items = NonNullable<MenuProps['items']>
@@ -40,7 +42,11 @@ const MENUS: { label: string; items: Items }[] = [
   },
   {
     label: 'Export',
-    items: [{ key: 'export-pencil', label: 'Pencil G-code (palette crosses)', icon: <DownloadOutlined /> }],
+    items: [
+      { key: 'export-zip', label: 'All painting files (.zip)', icon: <FileZipOutlined /> },
+      { type: 'divider' },
+      { key: 'export-pencil', label: 'Pencil G-code (palette crosses)', icon: <DownloadOutlined /> },
+    ],
   },
   {
     label: 'View',

@@ -5,6 +5,7 @@ with the tool up and ends at the park position. There are no pause commands: a p
 means a new file.
 """
 
+import math
 from collections.abc import Iterable, Sequence
 
 from paint_plotter.config import PlotterConfig
@@ -26,6 +27,10 @@ class GcodeWriter:
             "G90 ; absolute positioning",
         ]
         self._tool_down = True  # unknown at start: force a lift
+        self._pos: Point | None = None  # unknown at start
+        # Distances for statistics / time estimates (mm).
+        self.travel_mm = 0.0
+        self.paint_mm = 0.0
         self.up()
 
     def _fmt(self, v: float) -> str:
@@ -53,10 +58,22 @@ class GcodeWriter:
             self._lines.append(f"G0 Z{self._fmt(self.config.z.down)} F{self._fmt(self.config.feed_rates.travel_mm_min)}")
             self._tool_down = True
 
+    def _moved(self, x: float, y: float, painting: bool) -> None:
+        if self._pos is not None:
+            d = math.dist(self._pos, (x, y))
+            if painting:
+                self.paint_mm += d
+            else:
+                self.travel_mm += d
+        self._pos = (x, y)
+
     def travel(self, x: float, y: float) -> None:
         self._check(x, y)
         self.up()
+        if self._pos is not None and math.dist(self._pos, (x, y)) < 1e-9:
+            return
         self._lines.append(f"G0 X{self._fmt(x)} Y{self._fmt(y)} F{self._fmt(self.config.feed_rates.travel_mm_min)}")
+        self._moved(x, y, painting=False)
 
     def polyline(self, points: Sequence[Point]) -> None:
         if len(points) < 2:
@@ -68,11 +85,17 @@ class GcodeWriter:
         feed = self._fmt(self.config.feed_rates.paint_mm_min)
         for i, (x, y) in enumerate(points[1:]):
             self._lines.append(f"G1 X{self._fmt(x)} Y{self._fmt(y)}" + (f" F{feed}" if i == 0 else ""))
+            self._moved(x, y, painting=True)
         self.up()
 
     def polylines(self, lines: Iterable[Sequence[Point]]) -> None:
         for line in lines:
             self.polyline(line)
+
+    def estimated_seconds(self) -> float:
+        """Rough run time from the move lengths and feed rates (ignores acceleration and Z)."""
+        fr = self.config.feed_rates
+        return self.travel_mm / fr.travel_mm_min * 60 + self.paint_mm / fr.paint_mm_min * 60
 
     def finish(self) -> str:
         park = self.config.park

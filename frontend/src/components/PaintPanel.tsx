@@ -1,0 +1,251 @@
+import {
+  Alert,
+  Button,
+  Card,
+  Flex,
+  Form,
+  InputNumber,
+  Segmented,
+  Select,
+  Space,
+  Steps,
+  Switch,
+  Tooltip,
+  Typography,
+} from 'antd'
+import { DownloadOutlined, FileZipOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { saveBlob, type PaintFile, type PaintPlan, type PaintSettings } from '../api'
+import { Swatch } from './DrawingPanel'
+
+interface PaintPanelProps {
+  settings: PaintSettings
+  onSettingsChange: (s: PaintSettings) => void
+  plan: PaintPlan | null
+  /** The drawing, wells, mapping or settings changed since the plan was made. */
+  planOutdated: boolean
+  generating: boolean
+  canGenerate: string | null // reason why not, or null
+  onGenerate: () => void
+  onDownloadZip: () => void
+  onDownloadPencil: () => void
+  hasWells: boolean
+  showToolpaths: boolean
+  onShowToolpathsChange: (v: boolean) => void
+}
+
+const minutes = (s: number) => (s < 60 ? `${s} s` : `${Math.ceil(s / 60)} min`)
+
+function FileStep({ f }: { f: PaintFile }) {
+  return (
+    <Flex vertical gap={4}>
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        Insert a clean brush, put paint on cross <b>{f.well_name}</b>, run the file.
+      </Typography.Text>
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        {f.dips} dips · {(f.paint_length_mm / 1000).toFixed(1)} m painted · ~{minutes(f.estimated_seconds)}
+      </Typography.Text>
+      <Button
+        size="small"
+        icon={<DownloadOutlined />}
+        style={{ alignSelf: 'flex-start' }}
+        onClick={() => saveBlob(new Blob([f.gcode], { type: 'text/plain' }), f.filename)}
+      >
+        {f.filename}
+      </Button>
+    </Flex>
+  )
+}
+
+export default function PaintPanel(p: PaintPanelProps) {
+  const s = p.settings
+  const set = (patch: Partial<PaintSettings>) => p.onSettingsChange({ ...s, ...patch })
+  const total = p.plan?.files.reduce((t, f) => t + f.estimated_seconds, 0) ?? 0
+
+  return (
+    <Flex vertical gap={12}>
+      <Card size="small" title="Brush">
+        <Form layout="vertical" size="small">
+          <Form.Item label="Brush width" style={{ marginBottom: 8 }}>
+            <InputNumber
+              suffix="mm"
+              min={0.1}
+              step={0.5}
+              value={s.brush_width_mm}
+              onChange={(v) => set({ brush_width_mm: v ?? 1 })}
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
+          <Form.Item
+            label="Paint per dip"
+            tooltip="How far the brush paints before it goes back to its cross for fresh paint. Strokes continue where they stopped."
+            style={{ marginBottom: 0 }}
+          >
+            <InputNumber
+              suffix="mm"
+              min={1}
+              step={10}
+              value={s.paint_distance_mm}
+              onChange={(v) => set({ paint_distance_mm: v ?? 100 })}
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
+        </Form>
+      </Card>
+
+      <Card size="small" title="Fill">
+        <Form layout="vertical" size="small">
+          <Form.Item label="Pattern" style={{ marginBottom: 8 }}>
+            <Select
+              value={s.fill.pattern}
+              options={[{ value: 'hatch', label: 'Hatch (parallel lines)' }]}
+              onChange={(pattern) => set({ fill: { ...s.fill, pattern } })}
+            />
+          </Form.Item>
+          <Form.Item label="Angle and overlap" style={{ marginBottom: 8 }}>
+            <Space.Compact block>
+              <InputNumber
+                suffix="°"
+                value={s.fill.angle_deg}
+                step={15}
+                onChange={(v) => set({ fill: { ...s.fill, angle_deg: v ?? 0 } })}
+                style={{ width: '50%' }}
+              />
+              <InputNumber
+                suffix="% overlap"
+                min={0}
+                max={90}
+                step={5}
+                value={Math.round(s.fill.overlap * 100)}
+                onChange={(v) => set({ fill: { ...s.fill, overlap: (v ?? 0) / 100 } })}
+                style={{ width: '50%' }}
+              />
+            </Space.Compact>
+          </Form.Item>
+          <Space>
+            <Switch size="small" checked={s.fill.outline} onChange={(outline) => set({ fill: { ...s.fill, outline } })} />
+            <Typography.Text>Paint outline first</Typography.Text>
+          </Space>
+        </Form>
+      </Card>
+
+      <Card size="small" title="Dip">
+        <Form layout="vertical" size="small">
+          <Form.Item label="Motion in the paint" style={{ marginBottom: s.dip.mode === 'circle' ? 8 : 0 }}>
+            <Segmented<PaintSettings['dip']['mode']>
+              block
+              value={s.dip.mode}
+              options={[
+                { value: 'tap', label: 'Tap' },
+                { value: 'circle', label: 'Circle' },
+              ]}
+              onChange={(mode) => set({ dip: { ...s.dip, mode } })}
+            />
+          </Form.Item>
+          {s.dip.mode === 'circle' && (
+            <Form.Item label="Circle radius" style={{ marginBottom: 0 }}>
+              <InputNumber
+                suffix="mm"
+                min={0.5}
+                step={0.5}
+                value={s.dip.circle_radius_mm}
+                onChange={(v) => set({ dip: { ...s.dip, circle_radius_mm: v ?? 3 } })}
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+          )}
+        </Form>
+      </Card>
+
+      <Tooltip title={p.canGenerate}>
+        <Button
+          type="primary"
+          size="large"
+          block
+          icon={<ThunderboltOutlined />}
+          loading={p.generating}
+          disabled={!!p.canGenerate}
+          onClick={p.onGenerate}
+        >
+          {p.plan ? 'Regenerate brush paths' : 'Generate brush paths'}
+        </Button>
+      </Tooltip>
+
+      {p.plan && (
+        <>
+          {p.planOutdated && (
+            <Alert type="info" showIcon title="Settings or drawing changed since the paths were generated." />
+          )}
+          {p.plan.warnings.length > 0 && (
+            <Alert
+              type="warning"
+              showIcon
+              title="Notes"
+              description={
+                <ul style={{ margin: 0, paddingLeft: 16 }}>
+                  {p.plan.warnings.map((w) => (
+                    <li key={w}>{w}</li>
+                  ))}
+                </ul>
+              }
+            />
+          )}
+
+          <Card
+            size="small"
+            title={`Run order · ~${minutes(total)}`}
+            extra={
+              <Space size={6}>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  Preview
+                </Typography.Text>
+                <Switch size="small" checked={p.showToolpaths} onChange={p.onShowToolpathsChange} />
+              </Space>
+            }
+          >
+            <Steps
+              orientation="vertical"
+              size="small"
+              current={-1}
+              items={[
+                ...(p.hasWells
+                  ? [
+                      {
+                        title: '01 · Pencil: palette crosses',
+                        content: (
+                          <Flex vertical gap={4}>
+                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                              Lay the palette sheet on the bed, insert the pencil, run the file.
+                            </Typography.Text>
+                            <Button
+                              size="small"
+                              icon={<DownloadOutlined />}
+                              style={{ alignSelf: 'flex-start' }}
+                              onClick={p.onDownloadPencil}
+                            >
+                              Pencil file
+                            </Button>
+                          </Flex>
+                        ),
+                      },
+                    ]
+                  : []),
+                ...p.plan.files.map((f) => ({
+                  title: (
+                    <Space size={6}>
+                      <Swatch color={f.well_color} />
+                      {`${String(f.index).padStart(2, '0')} · Brush: ${f.well_name}`}
+                    </Space>
+                  ),
+                  content: <FileStep f={f} />,
+                })),
+              ]}
+            />
+            <Button block icon={<FileZipOutlined />} onClick={p.onDownloadZip}>
+              Download all (.zip with steps.txt)
+            </Button>
+          </Card>
+        </>
+      )}
+    </Flex>
+  )
+}

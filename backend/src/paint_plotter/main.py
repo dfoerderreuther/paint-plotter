@@ -1,13 +1,15 @@
 import io
+import zipfile
 
 from fastapi import FastAPI, HTTPException, UploadFile
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from paint_plotter.colors import ColorMatch, match_colors
 from paint_plotter.config import REPO_ROOT, PlotterConfig, load_config
 from paint_plotter.gcode import GcodeError
+from paint_plotter.painting import PaintPlan, PaintRequest, plan_painting, steps_text
 from paint_plotter.svg_import import SvgDrawing, read_svg
 from paint_plotter.wells import (
     Rect,
@@ -118,6 +120,42 @@ class ColorMatchRequest(BaseModel):
 @app.post("/api/colors/match")
 def colors_match(req: ColorMatchRequest) -> list[ColorMatch]:
     return match_colors(req.colors, req.wells)
+
+
+def _plan(req: PaintRequest) -> PaintPlan:
+    try:
+        return plan_painting(req, load_config())
+    except GcodeError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+@app.post("/api/paint/plan")
+def paint_plan(req: PaintRequest) -> PaintPlan:
+    return _plan(req)
+
+
+@app.post("/api/paint/export")
+def paint_export(req: PaintRequest) -> Response:
+    """All files of a painting as a zip: pencil layout (01), brush files (02…) and steps.txt."""
+    plan = _plan(req)
+    pencil_name = None
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        if req.layout.wells:
+            pencil_name = f"01_layout_{safe_name(req.layout.name)}_pencil.gcode"
+            try:
+                zf.writestr(pencil_name, layout_gcode(req.layout, load_config()))
+            except GcodeError as e:
+                raise HTTPException(status_code=422, detail=f"Pencil layout: {e}") from e
+        for f in plan.files:
+            zf.writestr(f.filename, f.gcode)
+        zf.writestr("steps.txt", steps_text(plan, req.layout, pencil_name))
+    filename = f"painting_{safe_name(req.layout.name)}.zip"
+    return Response(
+        buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # Serve the built frontend (npm run build). In development, Vite serves it instead.
