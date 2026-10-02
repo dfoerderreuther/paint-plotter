@@ -10,5 +10,9 @@
   "feed_rates": {
     "travel_mm_min": 3000,
     "paint_mm_min": 1500
+  },
+  "park": {
+    "x_mm": 0,
+    "y_mm": 0
   }
 }

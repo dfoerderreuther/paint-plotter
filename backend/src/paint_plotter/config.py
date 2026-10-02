@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config" / "plotter.json"
+DEFAULT_DATA_DIR = REPO_ROOT / "projects"
 
 
 class WorkArea(BaseModel):
@@ -39,14 +40,27 @@ class FeedRates(BaseModel):
     paint_mm_min: float = Field(gt=0)
 
 
+class Park(BaseModel):
+    """Where the tool goes (tool up) at the end of every G-code file."""
+
+    x_mm: float = 0
+    y_mm: float = 0
+
+
 class PlotterConfig(BaseModel):
     work_area: WorkArea
     z: ZConfig
     feed_rates: FeedRates
+    park: Park = Park()
 
 
 def config_path() -> Path:
     return Path(os.environ.get("PAINT_PLOTTER_CONFIG", DEFAULT_CONFIG_PATH))
+
+
+def data_dir() -> Path:
+    """Where projects and well layouts are saved."""
+    return Path(os.environ.get("PAINT_PLOTTER_DATA", DEFAULT_DATA_DIR))
 
 
 def load_config(path: Path | None = None) -> PlotterConfig:

@@ -1,7 +1,7 @@
 import { Alert, Button, Flex, InputNumber, Space, Switch, Tag, Typography, Upload } from 'antd'
 import { InboxOutlined } from '@ant-design/icons'
-import type { PaintLayer, SvgDrawing } from '../api'
-import { centered, fitScale, fitsBed, placedSize, type Placement } from '../placement'
+import type { PaintLayer, Rect, SvgDrawing } from '../api'
+import { centered, fitScale, placedRect, rectInside, type Placement } from '../placement'
 
 interface DrawingPanelProps {
   drawing: SvgDrawing | null
@@ -12,8 +12,8 @@ interface DrawingPanelProps {
   onPlacementChange: (p: Placement) => void
   hidden: Set<string>
   onToggleLayer: (id: string, visible: boolean) => void
-  bedWidth: number
-  bedHeight: number
+  /** Where the drawing has to fit (the painting area). */
+  area: Rect
 }
 
 function Swatch({ layer }: { layer: PaintLayer }) {
@@ -25,8 +25,8 @@ function Swatch({ layer }: { layer: PaintLayer }) {
 }
 
 export default function DrawingPanel(props: DrawingPanelProps) {
-  const { drawing, placement, onPlacementChange, bedWidth, bedHeight } = props
-  const size = drawing && placedSize(drawing, placement)
+  const { drawing, placement, onPlacementChange, area } = props
+  const placed = drawing && placedRect(drawing, placement)
 
   return (
     <Flex vertical gap={16}>
@@ -46,7 +46,7 @@ export default function DrawingPanel(props: DrawingPanelProps) {
         {props.fileName && <p className="ant-upload-hint">{props.fileName}</p>}
       </Upload.Dragger>
 
-      {drawing && size && (
+      {drawing && placed && (
         <>
           {drawing.warnings.map((w) => (
             <Alert key={w} type="warning" showIcon message={w} />
@@ -55,8 +55,8 @@ export default function DrawingPanel(props: DrawingPanelProps) {
           <div>
             <Typography.Title level={5}>Placement</Typography.Title>
             <Typography.Text type="secondary">
-              SVG {drawing.width_mm} × {drawing.height_mm} mm → on bed {size.width.toFixed(1)} ×{' '}
-              {size.height.toFixed(1)} mm
+              SVG {drawing.width_mm} × {drawing.height_mm} mm → on bed {placed.width_mm.toFixed(1)} ×{' '}
+              {placed.height_mm.toFixed(1)} mm
             </Typography.Text>
             <Flex gap={8} wrap style={{ marginTop: 8 }}>
               <InputNumber
@@ -85,19 +85,17 @@ export default function DrawingPanel(props: DrawingPanelProps) {
               />
             </Flex>
             <Space style={{ marginTop: 8 }}>
-              <Button onClick={() => onPlacementChange(centered(drawing, placement.scale, bedWidth, bedHeight))}>
+              <Button onClick={() => onPlacementChange(centered(drawing, placement.scale, area))}>
                 Center
               </Button>
               <Button
-                onClick={() =>
-                  onPlacementChange(centered(drawing, fitScale(drawing, bedWidth, bedHeight), bedWidth, bedHeight))
-                }
+                onClick={() => onPlacementChange(centered(drawing, fitScale(drawing, area), area))}
               >
-                Fit to bed
+                Fit to painting area
               </Button>
             </Space>
-            {!fitsBed(drawing, placement, bedWidth, bedHeight) && (
-              <Alert style={{ marginTop: 8 }} type="error" showIcon message="Drawing is outside the work area" />
+            {!rectInside(placed, area) && (
+              <Alert style={{ marginTop: 8 }} type="error" showIcon message="Drawing is outside the painting area" />
             )}
           </div>
 

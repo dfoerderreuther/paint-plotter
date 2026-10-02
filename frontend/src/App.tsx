@@ -1,12 +1,30 @@
-import { useEffect, useState } from 'react'
-import { Alert, App as AntApp, Collapse, Descriptions, Flex, Layout, Spin, Typography } from 'antd'
-import { fetchConfig, uploadSvg, type PlotterConfig, type SvgDrawing } from './api'
+import { useEffect, useMemo, useState } from 'react'
+import { Alert, App as AntApp, Collapse, Descriptions, Layout, Spin, Tabs, Typography } from 'antd'
+import {
+  checkWellLayout,
+  fetchConfig,
+  uploadSvg,
+  type PlotterConfig,
+  type SvgDrawing,
+  type WellLayout,
+} from './api'
 import Bed from './components/Bed'
 import DrawingPanel from './components/DrawingPanel'
 import DrawingView from './components/DrawingView'
-import { DEFAULT_PLACEMENT, type Placement } from './placement'
+import WellsPanel from './components/WellsPanel'
+import WellsView from './components/WellsView'
+import { DEFAULT_PLACEMENT, placedRect, type Placement } from './placement'
 
 const { Header, Sider, Content } = Layout
+
+const DEFAULT_LAYOUT: WellLayout = {
+  name: 'default',
+  painting_area: { x: 0, y: 0, width_mm: 280, height_mm: 280 },
+  palette: null,
+  margin_mm: 5,
+  draw_painting_area: true,
+  wells: [],
+}
 
 export default function App() {
   const { message } = AntApp.useApp()
@@ -19,9 +37,25 @@ export default function App() {
   const [placement, setPlacement] = useState<Placement>(DEFAULT_PLACEMENT)
   const [hidden, setHidden] = useState<Set<string>>(new Set())
 
+  const [layout, setLayout] = useState<WellLayout>(DEFAULT_LAYOUT)
+  const [layoutWarnings, setLayoutWarnings] = useState<string[]>([])
+
   useEffect(() => {
     fetchConfig().then(setConfig, (e: Error) => setError(e.message))
   }, [])
+
+  // Re-check the layout on the backend shortly after each edit.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      checkWellLayout(layout).then(
+        (r) => setLayoutWarnings(r.warnings),
+        () => setLayoutWarnings([]), // invalid while editing (e.g. empty field) - ignore
+      )
+    }, 250)
+    return () => clearTimeout(t)
+  }, [layout])
+
+  const drawingColors = useMemo(() => [...new Set(drawing?.layers.map((l) => l.color) ?? [])], [drawing])
 
   const handleUpload = async (file: File) => {
     setLoading(true)
@@ -29,7 +63,7 @@ export default function App() {
       const d = await uploadSvg(file)
       setDrawing(d)
       setFileName(file.name)
-      setPlacement(DEFAULT_PLACEMENT)
+      setPlacement({ ...DEFAULT_PLACEMENT, x: layout.painting_area.x, y: layout.painting_area.y })
       setHidden(new Set())
     } catch (e) {
       message.error((e as Error).message)
@@ -54,23 +88,46 @@ export default function App() {
         </Typography.Title>
       </Header>
       <Layout style={{ flex: 1, minHeight: 0 }}>
-        <Sider width={380} theme="light" style={{ padding: 16, overflowY: 'auto' }}>
+        <Sider width={400} theme="light" style={{ padding: '0 16px 16px', overflowY: 'auto' }}>
           {config && (
-            <Flex vertical gap={16}>
-              <DrawingPanel
-                drawing={drawing}
-                fileName={fileName}
-                loading={loading}
-                onUpload={handleUpload}
-                placement={placement}
-                onPlacementChange={setPlacement}
-                hidden={hidden}
-                onToggleLayer={toggleLayer}
-                bedWidth={config.work_area.width_mm}
-                bedHeight={config.work_area.height_mm}
+            <>
+              <Tabs
+                items={[
+                  {
+                    key: 'drawing',
+                    label: 'Drawing',
+                    children: (
+                      <DrawingPanel
+                        drawing={drawing}
+                        fileName={fileName}
+                        loading={loading}
+                        onUpload={handleUpload}
+                        placement={placement}
+                        onPlacementChange={setPlacement}
+                        hidden={hidden}
+                        onToggleLayer={toggleLayer}
+                        area={layout.painting_area}
+                      />
+                    ),
+                  },
+                  {
+                    key: 'wells',
+                    label: 'Wells',
+                    children: (
+                      <WellsPanel
+                        layout={layout}
+                        onChange={setLayout}
+                        warnings={layoutWarnings}
+                        drawingColors={drawingColors}
+                        drawingRect={drawing && placedRect(drawing, placement)}
+                      />
+                    ),
+                  },
+                ]}
               />
               <Collapse
                 size="small"
+                style={{ marginTop: 16 }}
                 items={[
                   {
                     key: 'plotter',
@@ -89,12 +146,15 @@ export default function App() {
                         <Descriptions.Item label="Paint feed">
                           {config.feed_rates.paint_mm_min} mm/min
                         </Descriptions.Item>
+                        <Descriptions.Item label="Park">
+                          X{config.park.x_mm} Y{config.park.y_mm}
+                        </Descriptions.Item>
                       </Descriptions>
                     ),
                   },
                 ]}
               />
-            </Flex>
+            </>
           )}
         </Sider>
         <Content style={{ padding: 16, position: 'relative' }}>
@@ -103,6 +163,7 @@ export default function App() {
           {config && (
             <div style={{ position: 'absolute', inset: 16 }}>
               <Bed widthMm={config.work_area.width_mm} heightMm={config.work_area.height_mm}>
+                <WellsView layout={layout} />
                 {drawing && <DrawingView drawing={drawing} placement={placement} hidden={hidden} />}
               </Bed>
             </div>

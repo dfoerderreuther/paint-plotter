@@ -16,6 +16,8 @@ backend/                    Python (uv) – FastAPI app, vpype
   src/paint_plotter/main.py FastAPI app: /api/* and serves frontend/dist
   src/paint_plotter/config.py  Loads and validates config/plotter.json
   src/paint_plotter/svg_import.py  SVG → paint layers (vpype), POST /api/svg
+  src/paint_plotter/wells.py   Well layouts: model, checks, palette arrange, pencil G-code, storage
+  src/paint_plotter/gcode.py   GcodeWriter (Marlin, Z up/down, soft limits, ends parked)
   tests/                    pytest (tests/data/sample.svg = test drawing)
 config/plotter.json         Plotter config (work area, Z up/down, feed rates)
 frontend/                   React + antd + TypeScript (Vite)
@@ -24,6 +26,8 @@ frontend/                   React + antd + TypeScript (Vite)
   src/components/DrawingView.tsx   Draws the paint layers on the bed
   src/components/DrawingPanel.tsx  Upload, placement, layer list
   src/placement.ts          Drawing placement on the bed (offset + scale)
+  src/components/WellsPanel.tsx  Wells tab: layouts, painting area, palette, wells, pencil G-code
+  src/components/WellsView.tsx   Painting area, palette page and wells on the bed
 projects/                   Saved paintings / well layouts (JSON), git-ignored
 ```
 
@@ -38,6 +42,8 @@ projects/                   Saved paintings / well layouts (JSON), git-ignored
 - Frontend checks: `cd frontend && npm run build && npm run lint`
 - Config path can be overridden with the env var `PAINT_PLOTTER_CONFIG`.
 - The config validator enforces the Z rule (`z.up > 1`, `z.down <= 0`).
+- Saved data goes to `projects/` (override with `PAINT_PLOTTER_DATA`; tests use a temp dir).
+- `config/plotter.json` → `park`: where every G-code file ends (tool up).
 
 ## Concept
 
@@ -136,26 +142,26 @@ Brush cleaning between colors is also still being developed. Planned options:
 
 ## Paint well setup workflow
 
-The paint wells sit inside the work area. They are placed on the plotter
-with a pencil template:
+**Current default: a palette page with crosses.**
 
-1. **Define the wells in the app.** Set each well's position, size and shape on the
-   virtual bed, plus the paint color it will hold. Wells **can be any size**.
-2. **Put paper on the plotter.**
-3. **Plot the well outlines with a pencil.** The app generates a separate
-   "well layout" G-code file that draws each well's outline and, ideally, a label or color marker.
-   It also draws the **boundary of the painting area** and **registration marks**.
-4. **Place the physical wells** on the pencil outlines.
+1. Place the drawing and set the **painting area** (Wells tab → "Use drawing bounds" or enter it).
+2. **"Arrange crosses from drawing"** puts an **A4 palette page** (portrait, or landscape if
+   that one stays clear of the painting area) in the bed corner **diagonally opposite the
+   painting area**. One **cross per drawing color** is spaced evenly on it, labelled
+   "<n> <hex>" to the right of the cross. That way you can refill paint while the plotter
+   paints elsewhere. The plotter is CoreXY.
+3. Lay the A4 sheet on the bed and run the **pencil G-code** (`01_layout_<name>_pencil.gcode`).
+   It draws the crosses and labels, plus the painting area outline and registration
+   marks (crosses at its corners) if that option is ticked.
+4. Put each paint onto its cross. **The brush picks up paint at the centre of the cross.**
 
-The plotter then knows exactly where each well is, because the coordinates in the app
-are the ones the pencil drew. The well layout counts as one of the several G-code files
-a painting can produce.
+Wells can also be **circle** or **rect** outlines (any size) for physical cups or pans,
+edited by hand. Layouts are saved in `projects/well_layouts/<name>.json` and can be reused.
 
-Consequences:
-- The painting area and the wells share the bed, so the app must stop strokes from
-  overlapping the wells (and keep some margin).
-- A well layout should be saved and reusable across paintings, so the wells don't
-  have to be redrawn every time.
+Checks (shown live as warnings): wells and palette page inside the work area, cross labels
+inside the work area, wells on the palette page, palette page not overlapping the painting
+area, and at least `margin_mm` (default 5) between wells, and between wells and the painting
+area. For checking, a cross counts as a circle the size of the cross (the paint spot).
 
 ## SVG import (how it works)
 
@@ -193,7 +199,7 @@ Consequences:
 
 1. ✅ Project setup: Python API and web frontend, both running locally
 2. ✅ SVG upload and visualization
-3. Defining wells on a virtual bed (size from config), then exporting the pencil "well layout" G-code
+3. ✅ Wells: palette page with crosses (auto-arranged), saved layouts, pencil "well layout" G-code
 4. Color mapping from SVG colors to reference areas
 5. Toolpath planning: fill pattern, brush size, reloading after N mm of painting
 6. G-code generation, with several files per painting
