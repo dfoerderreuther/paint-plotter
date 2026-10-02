@@ -15,11 +15,15 @@ paint from color wells ("reference areas") on the plotter bed.
 backend/                    Python (uv) – FastAPI app, vpype
   src/paint_plotter/main.py FastAPI app: /api/* and serves frontend/dist
   src/paint_plotter/config.py  Loads and validates config/plotter.json
-  tests/                    pytest
+  src/paint_plotter/svg_import.py  SVG → paint layers (vpype), POST /api/svg
+  tests/                    pytest (tests/data/sample.svg = test drawing)
 config/plotter.json         Plotter config (work area, Z up/down, feed rates)
 frontend/                   React + antd + TypeScript (Vite)
   src/api.ts                API types (mirror the pydantic models) and fetch helpers
   src/components/Bed.tsx    Work area in machine coordinates (origin bottom left)
+  src/components/DrawingView.tsx   Draws the paint layers on the bed
+  src/components/DrawingPanel.tsx  Upload, placement, layer list
+  src/placement.ts          Drawing placement on the bed (offset + scale)
 projects/                   Saved paintings / well layouts (JSON), git-ignored
 ```
 
@@ -153,6 +157,20 @@ Consequences:
 - A well layout should be saved and reusable across paintings, so the wells don't
   have to be redrawn every time.
 
+## SVG import (how it works)
+
+- vpype reads the SVG (curves flattened to ≤ 0.1 mm segments) grouped by fill, stroke and stroke-width.
+- Each group becomes **paint layers** by kind: a **fill** layer (an area to paint) and/or a
+  **stroke** layer (a line). A blue circle with a black outline gives `fill-#0000ff` and
+  `stroke-#000000-…`. Layers with the same kind, color and width are merged and kept in SVG order.
+- SVG defaults apply: fill is black when missing, stroke is none.
+- `none` paints nothing. Gradients (`url(...)`) and `currentColor` are ignored **with a
+  warning** (vpype would otherwise silently turn them black).
+- Coordinates come back in mm with Y already flipped (origin bottom left of the SVG page).
+  The placement on the bed (x, y = bottom left corner, uniform scale) is applied on top of that.
+- For now the SVG is not stored on the server. The frontend keeps it in memory, and saving
+  comes with projects.
+
 ## Defaults (can be changed later)
 
 - **Feed rates:** separate speeds for travel (brush up) and painting (brush down), set in `config/plotter.json`.
@@ -174,7 +192,7 @@ Consequences:
 ## Roadmap (draft)
 
 1. ✅ Project setup: Python API and web frontend, both running locally
-2. SVG upload and visualization
+2. ✅ SVG upload and visualization
 3. Defining wells on a virtual bed (size from config), then exporting the pencil "well layout" G-code
 4. Color mapping from SVG colors to reference areas
 5. Toolpath planning: fill pattern, brush size, reloading after N mm of painting

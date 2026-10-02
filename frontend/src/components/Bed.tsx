@@ -1,9 +1,12 @@
+import type { ReactNode } from 'react'
 import { theme } from 'antd'
 
 interface BedProps {
   widthMm: number
   heightMm: number
   gridMm?: number
+  /** Content in machine coordinates (mm, origin bottom left, Y up). */
+  children?: ReactNode
 }
 
 /**
@@ -11,7 +14,7 @@ interface BedProps {
  * The plotter's origin is bottom left with Y up, SVG's is top left with Y down,
  * so all content goes inside a group that flips Y.
  */
-export default function Bed({ widthMm, heightMm, gridMm = 50 }: BedProps) {
+export default function Bed({ widthMm, heightMm, gridMm = 50, children }: BedProps) {
   const { token } = theme.useToken()
   const xs = Array.from({ length: Math.floor(widthMm / gridMm) + 1 }, (_, i) => i * gridMm)
   const ys = Array.from({ length: Math.floor(heightMm / gridMm) + 1 }, (_, i) => i * gridMm)
@@ -30,6 +33,7 @@ export default function Bed({ widthMm, heightMm, gridMm = 50 }: BedProps) {
         {ys.map((y) => (
           <line key={`y${y}`} x1={0} y1={y} x2={widthMm} y2={y} stroke={token.colorBorderSecondary} strokeWidth={0.5} />
         ))}
+        {children}
         <circle cx={0} cy={0} r={4} fill={token.colorPrimary} />
       </g>
       {/* Labels outside the flipped group so text is not mirrored */}
