@@ -31,7 +31,7 @@ export function resolveColorMap(
 
 export function matchQuality(deltaE: number): { label: string; color: string } {
   if (deltaE <= 2.3) return { label: 'exact', color: 'green' }
-  if (deltaE <= 10) return { label: 'close', color: 'cyan' }
+  if (deltaE <= 10) return { label: 'close', color: 'lime' }
   if (deltaE <= 25) return { label: 'similar', color: 'gold' }
   return { label: 'far', color: 'red' }
 }

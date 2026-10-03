@@ -1,6 +1,8 @@
-import { Alert, Button, Card, Empty, Flex, Form, InputNumber, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd'
+import { Alert, Button, Empty, Flex, Form, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd'
 import { CompressOutlined, ExpandOutlined, FileImageOutlined } from '@ant-design/icons'
 import type { PaintLayer, Rect, SvgDrawing } from '../api'
+import { Field, FieldRow, Num } from './form'
+import Section from './Section'
 import { centered, fitScale, placedRect, rectInside, type Placement } from '../placement'
 
 interface DrawingPanelProps {
@@ -52,50 +54,39 @@ export default function DrawingPanel(props: DrawingPanelProps) {
         />
       )}
 
-      <Card size="small" title="Placement">
+      <Section id="drawing-placement" title="Placement">
         <Form layout="vertical" size="small">
-          <Form.Item label="Position of bottom-left corner" style={{ marginBottom: 8 }}>
-            <Space.Compact block>
-              <InputNumber
-                prefix="X"
-                suffix="mm"
-                value={placement.x}
-                onChange={(v) => onPlacementChange({ ...placement, x: v ?? 0 })}
-                style={{ width: '50%' }}
-              />
-              <InputNumber
-                prefix="Y"
-                suffix="mm"
-                value={placement.y}
-                onChange={(v) => onPlacementChange({ ...placement, y: v ?? 0 })}
-                style={{ width: '50%' }}
-              />
-            </Space.Compact>
-          </Form.Item>
-          <Form.Item label="Scale" style={{ marginBottom: 8 }}>
-            <Space.Compact block>
-              <InputNumber
-                value={placement.scale}
-                min={0.001}
-                step={0.1}
-                onChange={(v) => onPlacementChange({ ...placement, scale: v ?? 1 })}
-                style={{ width: '40%' }}
-              />
-              <Tooltip title="Center on the bed at this scale">
-                <Button icon={<CompressOutlined />} onClick={() => onPlacementChange(centered(drawing, placement.scale, area))}>
+          <FieldRow>
+            <Field label="X" tooltip="Distance of the drawing's bottom-left corner from the bed's left edge (origin at the bottom left).">
+              <Num suffix="mm" value={placement.x} onChange={(v) => onPlacementChange({ ...placement, x: v ?? 0 })} />
+            </Field>
+            <Field label="Y" tooltip="Distance of the drawing's bottom-left corner from the bed's bottom edge.">
+              <Num suffix="mm" value={placement.y} onChange={(v) => onPlacementChange({ ...placement, y: v ?? 0 })} />
+            </Field>
+          </FieldRow>
+          <FieldRow>
+            <Field label="Scale" tooltip="Size on the bed relative to the SVG's own size in mm. 1 = as in the SVG, 2 = twice as large.">
+              <Num min={0.001} step={0.1} value={placement.scale} onChange={(v) => onPlacementChange({ ...placement, scale: v ?? 1 })} />
+            </Field>
+            <Field label="Quick placement" tooltip="Center: centre on the bed at the current scale. Fit: largest scale that fits the bed, centred.">
+              <Space.Compact block>
+                <Button
+                  icon={<CompressOutlined />}
+                  style={{ width: '50%' }}
+                  onClick={() => onPlacementChange(centered(drawing, placement.scale, area))}
+                >
                   Center
                 </Button>
-              </Tooltip>
-              <Tooltip title="Largest scale that fits the bed, centered">
                 <Button
                   icon={<ExpandOutlined />}
+                  style={{ width: '50%' }}
                   onClick={() => onPlacementChange(centered(drawing, fitScale(drawing, area), area))}
                 >
                   Fit
                 </Button>
-              </Tooltip>
-            </Space.Compact>
-          </Form.Item>
+              </Space.Compact>
+            </Field>
+          </FieldRow>
         </Form>
         <Typography.Text type="secondary">
           {drawing.width_mm} × {drawing.height_mm} mm in the SVG → {placed.width_mm.toFixed(1)} ×{' '}
@@ -104,9 +95,9 @@ export default function DrawingPanel(props: DrawingPanelProps) {
         {!rectInside(placed, area) && (
           <Alert style={{ marginTop: 8 }} type="error" showIcon title="Drawing is outside the work area" />
         )}
-      </Card>
+      </Section>
 
-      <Card size="small" title="Layers" styles={{ body: { padding: 0 } }}>
+      <Section id="drawing-layers" title="Layers" flush>
         <Table<PaintLayer>
           size="small"
           rowKey="id"
@@ -130,7 +121,7 @@ export default function DrawingPanel(props: DrawingPanelProps) {
               title: 'Type',
               key: 'kind',
               render: (_, l) =>
-                l.kind === 'fill' ? <Tag color="blue">fill</Tag> : <Tag>line {l.stroke_width_mm} mm</Tag>,
+                l.kind === 'fill' ? <Tag color="purple">fill</Tag> : <Tag>line {l.stroke_width_mm} mm</Tag>,
             },
             {
               title: 'Length',
@@ -151,7 +142,7 @@ export default function DrawingPanel(props: DrawingPanelProps) {
             },
           ]}
         />
-      </Card>
+      </Section>
     </Flex>
   )
 }

@@ -2,10 +2,8 @@ import {
   Alert,
   App as AntApp,
   Button,
-  Card,
   Flex,
   Form,
-  InputNumber,
   Segmented,
   Select,
   Space,
@@ -17,6 +15,8 @@ import {
 import { CopyOutlined, DownloadOutlined, FileZipOutlined, SaveOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { copyText, saveBlob, type PaintFile, type PaintPlan, type PaintSettings } from '../api'
 import { Swatch } from './DrawingPanel'
+import Section from './Section'
+import { Field, FieldRow, Num, SwitchField } from './form'
 
 interface PaintPanelProps {
   settings: PaintSettings
@@ -84,54 +84,55 @@ export default function PaintPanel(p: PaintPanelProps) {
   const s = p.settings
   const set = (patch: Partial<PaintSettings>) => p.onSettingsChange({ ...s, ...patch })
   const setFill = (patch: Partial<PaintSettings['fill']>) => set({ fill: { ...s.fill, ...patch } })
-  // Negative overlap (dots only) spaces the dabs apart on purpose, e.g. for shading.
-  const overlapInput = (width: string) => (
-    <InputNumber
-      suffix="% overlap"
-      min={s.fill.pattern === 'dots' ? -200 : 0}
-      max={90}
-      step={5}
-      value={Math.round(s.fill.overlap * 100)}
-      onChange={(v) => setFill({ overlap: (v ?? 0) / 100 })}
-      style={{ width }}
-    />
+  const isDots = s.fill.pattern === 'dots'
+  const overlapField = (
+    <Field
+      label="Overlap"
+      tooltip={
+        isDots
+          ? 'How much neighbouring dots overlap, in % of the brush width. Hex covers fully from ~14 %, square from ~30 %; then leftover gaps are filled with extra dots. Below 0 % the dots are spaced apart on purpose (−100 % = one brush width of space) for lighter, shaded areas.'
+          : 'How much neighbouring lines overlap, in % of the brush width. Line spacing = brush width × (1 − overlap). More overlap: denser, more even paint; less: faster.'
+      }
+    >
+      <Num
+        suffix="%"
+        min={isDots ? -200 : 0}
+        max={90}
+        step={5}
+        value={Math.round(s.fill.overlap * 100)}
+        onChange={(v) => setFill({ overlap: (v ?? 0) / 100 })}
+      />
+    </Field>
   )
   const total = p.plan?.files.reduce((t, f) => t + f.estimated_seconds, 0) ?? 0
 
   return (
     <Flex vertical gap={12}>
-      <Card size="small" title="Brush">
+      <Section id="paint-brush" title="Brush">
         <Form layout="vertical" size="small">
-          <Form.Item label="Brush width" style={{ marginBottom: 8 }}>
-            <InputNumber
-              suffix="mm"
-              min={0.1}
-              step={0.5}
-              value={s.brush_width_mm}
-              onChange={(v) => set({ brush_width_mm: v ?? 1 })}
-              style={{ width: '100%' }}
-            />
-          </Form.Item>
-          <Form.Item
-            label="Paint per dip"
-            tooltip="How far the brush paints before it goes back to its cross for fresh paint. Strokes continue where they stopped. (Dots use 'Dots per dip' instead.)"
-            style={{ marginBottom: 0 }}
-          >
-            <InputNumber
-              suffix="mm"
-              min={1}
-              step={10}
-              value={s.paint_distance_mm}
-              onChange={(v) => set({ paint_distance_mm: v ?? 100 })}
-              style={{ width: '100%' }}
-            />
-          </Form.Item>
+          <FieldRow>
+            <Field
+              label="Brush width"
+              tooltip="Width of the paint stroke the brush leaves, in mm. Sets the spacing of fill lines and dots, and how far fills stay inside the shape edge (half of it)."
+            >
+              <Num suffix="mm" min={0.1} step={0.5} value={s.brush_width_mm} onChange={(v) => set({ brush_width_mm: v ?? 1 })} />
+            </Field>
+            <Field
+              label="Paint per dip"
+              tooltip="How many mm the brush paints before it goes back to its cross for fresh paint. A stroke that is cut continues exactly where it stopped. Dots use 'Dots per dip' instead."
+            >
+              <Num suffix="mm" min={1} step={10} value={s.paint_distance_mm} onChange={(v) => set({ paint_distance_mm: v ?? 100 })} />
+            </Field>
+          </FieldRow>
         </Form>
-      </Card>
+      </Section>
 
-      <Card size="small" title="Fill">
+      <Section id="paint-fill" title="Fill">
         <Form layout="vertical" size="small">
-          <Form.Item label="Pattern" style={{ marginBottom: 8 }}>
+          <Field
+            label="Pattern"
+            tooltip="How filled areas are painted. Hatch: parallel lines. Contour: the outline, then rings inwards until full. Dots: dabs on a regular grid. Lines in the drawing are always painted as strokes."
+          >
             <Select<PaintSettings['fill']['pattern']>
               value={s.fill.pattern}
               options={[
@@ -139,140 +140,122 @@ export default function PaintPanel(p: PaintPanelProps) {
                 { value: 'contour', label: 'Contour (outline inwards)' },
                 { value: 'dots', label: 'Dots (dabs)' },
               ]}
-              onChange={(pattern) => set({ fill: { ...s.fill, pattern } })}
+              onChange={(pattern) => setFill({ pattern })}
             />
-          </Form.Item>
+          </Field>
+
           {s.fill.pattern === 'hatch' && (
             <>
-              <Form.Item label="Angle and overlap" style={{ marginBottom: 8 }}>
-                <Space.Compact block>
-                  <InputNumber
-                    suffix="°"
-                    value={s.fill.angle_deg}
-                    step={15}
-                    onChange={(v) => setFill({ angle_deg: v ?? 0 })}
-                    style={{ width: '50%' }}
-                  />
-                  {overlapInput('50%')}
-                </Space.Compact>
-              </Form.Item>
-              <Space>
-                <Switch size="small" checked={s.fill.outline} onChange={(outline) => setFill({ outline })} />
-                <Typography.Text>Paint outline first</Typography.Text>
-              </Space>
-            </>
-          )}
-          {s.fill.pattern === 'contour' && (
-            <Form.Item
-              label="Overlap"
-              tooltip="Starts with the outline, then steps inwards by brush width minus overlap until the area is painted."
-              style={{ marginBottom: 0 }}
-            >
-              {overlapInput('100%')}
-            </Form.Item>
-          )}
-          {s.fill.pattern === 'dots' && (
-            <>
-              <Form.Item
-                label="Grid"
-                tooltip="Hex covers fully from ~14 % overlap, square from ~30 %."
-                style={{ marginBottom: 8 }}
-              >
-                <Segmented<PaintSettings['fill']['dot_grid']>
-                  block
-                  value={s.fill.dot_grid}
-                  options={[
-                    { value: 'hex', label: 'Hex' },
-                    { value: 'square', label: 'Square' },
-                  ]}
-                  onChange={(dot_grid) => setFill({ dot_grid })}
-                />
-              </Form.Item>
-              <Form.Item
-                label="Overlap and jitter"
-                tooltip="Overlap below 0 % spaces the dots apart (e.g. −100 % = one brush width of space between dots) for lighter, shaded areas. Gaps are only filled with extra dots when the grid is meant to cover (hex ≥ 14 %, square ≥ 30 %)."
-                style={{ marginBottom: 8 }}
-              >
-                <Space.Compact block>
-                  {overlapInput('50%')}
-                  <Tooltip title="Random offset per dot for a hand-painted look (same every time)">
-                    <InputNumber
-                      prefix="±"
-                      suffix="mm"
-                      min={0}
-                      step={0.25}
-                      value={s.fill.dot_jitter_mm}
-                      onChange={(v) => setFill({ dot_jitter_mm: v ?? 0 })}
-                      style={{ width: '50%' }}
-                    />
-                  </Tooltip>
-                </Space.Compact>
-              </Form.Item>
-              <Form.Item label="Dots per dip" tooltip="Fresh paint after this many dots." style={{ marginBottom: 8 }}>
-                <InputNumber
-                  min={1}
-                  step={5}
-                  value={s.fill.dots_per_dip}
-                  onChange={(v) => setFill({ dots_per_dip: v ?? 1 })}
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-              <Tooltip title="A row of dots sits on the outline and the grid fills the inside. Paint goes about half a brush beyond the edge; dots may overlap there. Off: dots stay inside the shape.">
-                <Space>
-                  <Switch
-                    size="small"
-                    checked={s.fill.dots_to_edge}
-                    onChange={(dots_to_edge) => setFill({ dots_to_edge })}
-                  />
-                  <Typography.Text>Dot centres reach the edge</Typography.Text>
-                </Space>
-              </Tooltip>
-            </>
-          )}
-        </Form>
-      </Card>
-
-      <Card size="small" title="Dip">
-        <Form layout="vertical" size="small">
-          <Form.Item label="Motion in the paint" style={{ marginBottom: 8 }}>
-            <Segmented<PaintSettings['dip']['mode']>
-              block
-              value={s.dip.mode}
-              options={[
-                { value: 'tap', label: 'Tap' },
-                { value: 'circle', label: 'Circle' },
-              ]}
-              onChange={(mode) => set({ dip: { ...s.dip, mode } })}
-            />
-          </Form.Item>
-          {s.dip.mode === 'circle' && (
-            <Form.Item label="Circle radius" style={{ marginBottom: 8 }}>
-              <InputNumber
-                suffix="mm"
-                min={0.5}
-                step={0.5}
-                value={s.dip.circle_radius_mm}
-                onChange={(v) => set({ dip: { ...s.dip, circle_radius_mm: v ?? 3 } })}
-                style={{ width: '100%' }}
+              <FieldRow>
+                <Field label="Angle" tooltip="Direction of the hatch lines: 0° horizontal, 90° vertical, 45° diagonal.">
+                  <Num suffix="°" step={15} value={s.fill.angle_deg} onChange={(v) => setFill({ angle_deg: v ?? 0 })} />
+                </Field>
+                {overlapField}
+              </FieldRow>
+              <SwitchField
+                label="Outline first"
+                tooltip="Paint the shape's outline (half a brush inside the edge) before hatching it. Gives a clean edge."
+                checked={s.fill.outline}
+                onChange={(outline) => setFill({ outline })}
               />
-            </Form.Item>
+            </>
           )}
-          <Form.Item
-            label="Restart overlap"
-            tooltip="After a dip, a stroke continues this far back on the part already painted, then paints on. Example: 2 mm overlap and 15 mm paint per dip → back 2 mm, brush down, paint 2 + 15 mm, next dip. Not used at the start of a new stroke."
-            style={{ marginBottom: 0 }}
-          >
-            <InputNumber
-              suffix="mm"
-              min={0}
-              step={0.5}
-              value={s.dip.resume_overlap_mm}
-              onChange={(v) => set({ dip: { ...s.dip, resume_overlap_mm: v ?? 0 } })}
-              style={{ width: '100%' }}
-            />
-          </Form.Item>
+
+          {s.fill.pattern === 'contour' && <FieldRow>{overlapField}</FieldRow>}
+
+          {isDots && (
+            <>
+              <FieldRow>
+                <Field
+                  label="Grid"
+                  tooltip="Layout of the dots. Hex: rows offset by half a dot, covers evenly from ~14 % overlap. Square: dots in straight rows and columns, needs ~30 %."
+                >
+                  <Segmented<PaintSettings['fill']['dot_grid']>
+                    block
+                    value={s.fill.dot_grid}
+                    options={[
+                      { value: 'hex', label: 'Hex' },
+                      { value: 'square', label: 'Square' },
+                    ]}
+                    onChange={(dot_grid) => setFill({ dot_grid })}
+                  />
+                </Field>
+                {overlapField}
+              </FieldRow>
+              <FieldRow>
+                <Field
+                  label="Jitter"
+                  tooltip="Random offset of each dot up to ± this many mm, for a hand-painted look. The same settings always give the same dots. Jitter opens small gaps; more overlap closes them."
+                >
+                  <Num
+                    prefix="±"
+                    suffix="mm"
+                    min={0}
+                    step={0.25}
+                    value={s.fill.dot_jitter_mm}
+                    onChange={(v) => setFill({ dot_jitter_mm: v ?? 0 })}
+                  />
+                </Field>
+                <Field label="Dots per dip" tooltip="The brush takes fresh paint after this many dots.">
+                  <Num min={1} step={5} value={s.fill.dots_per_dip} onChange={(v) => setFill({ dots_per_dip: v ?? 1 })} />
+                </Field>
+              </FieldRow>
+              <SwitchField
+                label="Dots reach the edge"
+                tooltip="On: dot centres may sit up to the shape's edge, so paint goes up to half a brush beyond it. Off: dots stay half a brush inside, so the paint stays within the shape."
+                checked={s.fill.dots_to_edge}
+                onChange={(dots_to_edge) => setFill({ dots_to_edge })}
+              />
+            </>
+          )}
         </Form>
-      </Card>
+      </Section>
+
+      <Section id="paint-dip" title="Dip">
+        <Form layout="vertical" size="small">
+          <FieldRow>
+            <Field
+              label="Motion"
+              tooltip="What the brush does in the paint at its cross. Tap: down and up. Circle: down, one small circle to load more paint, up."
+            >
+              <Segmented<PaintSettings['dip']['mode']>
+                block
+                value={s.dip.mode}
+                options={[
+                  { value: 'tap', label: 'Tap' },
+                  { value: 'circle', label: 'Circle' },
+                ]}
+                onChange={(mode) => set({ dip: { ...s.dip, mode } })}
+              />
+            </Field>
+            {s.dip.mode === 'circle' && (
+              <Field label="Circle radius" tooltip="Radius of the circle the brush makes in the paint, around the centre of the cross.">
+                <Num
+                  suffix="mm"
+                  min={0.5}
+                  step={0.5}
+                  value={s.dip.circle_radius_mm}
+                  onChange={(v) => set({ dip: { ...s.dip, circle_radius_mm: v ?? 3 } })}
+                />
+              </Field>
+            )}
+          </FieldRow>
+          <FieldRow>
+            <Field
+              label="Restart overlap"
+              tooltip="After a dip, a cut stroke restarts this far back on the part already painted, so there is no visible seam. Example: 2 mm and 15 mm paint per dip → back 2 mm, paint 2 + 15 mm, next dip. Not used at the start of a new stroke."
+            >
+              <Num
+                suffix="mm"
+                min={0}
+                step={0.5}
+                value={s.dip.resume_overlap_mm}
+                onChange={(v) => set({ dip: { ...s.dip, resume_overlap_mm: v ?? 0 } })}
+              />
+            </Field>
+          </FieldRow>
+        </Form>
+      </Section>
 
       <Tooltip title={p.canGenerate}>
         <Button
@@ -308,8 +291,8 @@ export default function PaintPanel(p: PaintPanelProps) {
             />
           )}
 
-          <Card
-            size="small"
+          <Section
+            id="paint-run-order"
             title={`Run order · ~${minutes(total)}`}
             extra={
               <Space size={6}>
@@ -359,7 +342,7 @@ export default function PaintPanel(p: PaintPanelProps) {
                 Download all (.zip with steps.txt)
               </Button>
             </Flex>
-          </Card>
+          </Section>
         </>
       )}
     </Flex>

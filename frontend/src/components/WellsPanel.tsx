@@ -1,13 +1,11 @@
 import {
   Alert,
   Button,
-  Card,
   ColorPicker,
   Empty,
   Flex,
   Form,
   Input,
-  InputNumber,
   Popconfirm,
   Segmented,
   Space,
@@ -19,6 +17,8 @@ import {
 import { AppstoreAddOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import type { Rect, Well, WellLayout, WellShape } from '../api'
 import { Swatch } from './DrawingPanel'
+import { Field, FieldRow, Num } from './form'
+import Section from './Section'
 
 interface WellsPanelProps {
   layout: WellLayout
@@ -37,78 +37,89 @@ const SHAPES: { value: WellShape; label: string }[] = [
   { value: 'rect', label: 'Rect' },
 ]
 
+/** Palette page position and size. */
 function RectFields({ rect, onChange }: { rect: Rect; onChange: (r: Rect) => void }) {
-  const num = (key: keyof Rect, prefix: string) => (
-    <InputNumber
-      prefix={prefix}
-      suffix="mm"
-      value={rect[key]}
-      min={key.endsWith('_mm') ? 1 : undefined}
-      onChange={(v) => onChange({ ...rect, [key]: v ?? 0 })}
-      style={{ width: '50%' }}
-    />
-  )
+  const set = (key: keyof Rect) => (v: number | null) => onChange({ ...rect, [key]: v ?? 0 })
   return (
     <Form layout="vertical" size="small">
-      <Form.Item label="Position" style={{ marginBottom: 8 }}>
-        <Space.Compact block>
-          {num('x', 'X')}
-          {num('y', 'Y')}
-        </Space.Compact>
-      </Form.Item>
-      <Form.Item label="Size" style={{ marginBottom: 0 }}>
-        <Space.Compact block>
-          {num('width_mm', 'W')}
-          {num('height_mm', 'H')}
-        </Space.Compact>
-      </Form.Item>
+      <FieldRow>
+        <Field label="X" tooltip="Left edge of the palette sheet, in mm from the bed's left edge.">
+          <Num suffix="mm" value={rect.x} onChange={set('x')} />
+        </Field>
+        <Field label="Y" tooltip="Bottom edge of the palette sheet, in mm from the bed's bottom edge.">
+          <Num suffix="mm" value={rect.y} onChange={set('y')} />
+        </Field>
+      </FieldRow>
+      <FieldRow>
+        <Field label="Width" tooltip="Width of the palette sheet (A4 portrait: 210 mm).">
+          <Num suffix="mm" min={1} value={rect.width_mm} onChange={set('width_mm')} />
+        </Field>
+        <Field label="Height" tooltip="Height of the palette sheet (A4 portrait: 297 mm).">
+          <Num suffix="mm" min={1} value={rect.height_mm} onChange={set('height_mm')} />
+        </Field>
+      </FieldRow>
     </Form>
   )
 }
 
+const SIZE_HELP: Record<WellShape, { label: string; tooltip: string }> = {
+  cross: {
+    label: 'Cross size',
+    tooltip: 'Length of the cross arms. Also the size of the paint spot: wells closer than the margin are flagged.',
+  },
+  circle: { label: 'Diameter', tooltip: 'Diameter of the circle drawn for a round cup or pan.' },
+  rect: { label: 'Width', tooltip: 'Width of the rectangle drawn for a square pan.' },
+}
+
 function WellEditor({ well, onChange, onDelete }: { well: Well; onChange: (w: Well) => void; onDelete: () => void }) {
-  const sizeLabel = well.shape === 'cross' ? 'Cross size' : well.shape === 'circle' ? 'Diameter' : 'Size'
+  const size = SIZE_HELP[well.shape]
   return (
     <Form layout="vertical" size="small">
-      <Form.Item label="Name and color" style={{ marginBottom: 8 }}>
-        <Space.Compact block>
-          <ColorPicker disabledAlpha value={well.color} onChangeComplete={(c) => onChange({ ...well, color: c.toHexString() })} />
+      <FieldRow>
+        <Field label="Name" tooltip="Label written next to the cross (or inside the circle/rectangle) by the pencil file.">
           <Input value={well.name} onChange={(e) => onChange({ ...well, name: e.target.value })} />
-        </Space.Compact>
-      </Form.Item>
-      <Form.Item label="Shape" style={{ marginBottom: 8 }}>
+        </Field>
+        <Field label="Color" tooltip="The paint you put on this well. Drawing colors are matched to the closest well color.">
+          <ColorPicker
+            showText
+            disabledAlpha
+            value={well.color}
+            onChangeComplete={(c) => onChange({ ...well, color: c.toHexString() })}
+            style={{ width: '100%', justifyContent: 'flex-start' }}
+          />
+        </Field>
+      </FieldRow>
+      <Field
+        label="Shape"
+        tooltip="Cross: a pencil cross on the palette sheet, the paint is dabbed onto it. Circle / Rect: the outline of a physical cup or pan. The brush always dips at the centre."
+      >
         <Segmented<WellShape> block options={SHAPES} value={well.shape} onChange={(shape) => onChange({ ...well, shape })} />
-      </Form.Item>
-      <Form.Item label="Centre" style={{ marginBottom: 8 }}>
-        <Space.Compact block>
-          <InputNumber prefix="X" suffix="mm" value={well.x} onChange={(v) => onChange({ ...well, x: v ?? 0 })} style={{ width: '50%' }} />
-          <InputNumber prefix="Y" suffix="mm" value={well.y} onChange={(v) => onChange({ ...well, y: v ?? 0 })} style={{ width: '50%' }} />
-        </Space.Compact>
-      </Form.Item>
-      <Form.Item label={sizeLabel} style={{ marginBottom: 12 }}>
-        <Space.Compact block>
-          <InputNumber
-            prefix={well.shape === 'rect' ? 'W' : undefined}
+      </Field>
+      <FieldRow>
+        <Field label="X" tooltip="Centre of the well, in mm from the bed's left edge. The brush dips here.">
+          <Num suffix="mm" value={well.x} onChange={(v) => onChange({ ...well, x: v ?? 0 })} />
+        </Field>
+        <Field label="Y" tooltip="Centre of the well, in mm from the bed's bottom edge.">
+          <Num suffix="mm" value={well.y} onChange={(v) => onChange({ ...well, y: v ?? 0 })} />
+        </Field>
+      </FieldRow>
+      <FieldRow>
+        <Field label={size.label} tooltip={size.tooltip}>
+          <Num
             suffix="mm"
             min={1}
             value={well.width_mm}
             onChange={(v) =>
               onChange({ ...well, width_mm: v ?? 1, height_mm: well.shape === 'rect' ? well.height_mm : (v ?? 1) })
             }
-            style={{ width: well.shape === 'rect' ? '50%' : '100%' }}
           />
-          {well.shape === 'rect' && (
-            <InputNumber
-              prefix="H"
-              suffix="mm"
-              min={1}
-              value={well.height_mm}
-              onChange={(v) => onChange({ ...well, height_mm: v ?? 1 })}
-              style={{ width: '50%' }}
-            />
-          )}
-        </Space.Compact>
-      </Form.Item>
+        </Field>
+        {well.shape === 'rect' && (
+          <Field label="Height" tooltip="Height of the rectangle drawn for a square pan.">
+            <Num suffix="mm" min={1} value={well.height_mm} onChange={(v) => onChange({ ...well, height_mm: v ?? 1 })} />
+          </Field>
+        )}
+      </FieldRow>
       <Popconfirm title={`Delete well '${well.name}'?`} okButtonProps={{ danger: true }} onConfirm={onDelete}>
         <Button danger block icon={<DeleteOutlined />}>
           Delete well
@@ -156,8 +167,8 @@ export default function WellsPanel(props: WellsPanelProps) {
         />
       )}
 
-      <Card
-        size="small"
+      <Section
+        id="wells-palette"
         title="Palette page"
         extra={
           layout.palette && (
@@ -186,17 +197,17 @@ export default function WellsPanel(props: WellsPanelProps) {
             <RectFields rect={layout.palette} onChange={(r) => onChange({ ...layout, palette: r })} />
           </div>
         )}
-      </Card>
+      </Section>
 
-      <Card
-        size="small"
+      <Section
+        id="wells-list"
         title={`Wells (${layout.wells.length})`}
         extra={
           <Button size="small" icon={<PlusOutlined />} onClick={addWell}>
             Add
           </Button>
         }
-        styles={{ body: { padding: 0 } }}
+        flush
       >
         <Table<Well>
           size="small"
@@ -230,10 +241,10 @@ export default function WellsPanel(props: WellsPanelProps) {
             },
           ]}
         />
-      </Card>
+      </Section>
 
       {selected ? (
-        <Card size="small" title={`Edit '${selected.name}'`}>
+        <Section id="wells-edit" title={`Edit '${selected.name}'`}>
           <WellEditor
             well={selected}
             onChange={updateWell}
@@ -242,7 +253,7 @@ export default function WellsPanel(props: WellsPanelProps) {
               onSelect(null)
             }}
           />
-        </Card>
+        </Section>
       ) : (
         layout.wells.length > 0 && (
           <Typography.Text type="secondary" style={{ textAlign: 'center' }}>

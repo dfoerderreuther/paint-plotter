@@ -1,7 +1,8 @@
-import { Alert, Card, Flex, Select, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd'
+import { Alert, Flex, Select, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd'
 import type { ColorMatch, PaintLayer, Well } from '../api'
 import { AUTO, SKIP, matchQuality, type ColorChoices } from '../colorMap'
 import { Swatch } from './DrawingPanel'
+import Section from './Section'
 
 interface ColorsPanelProps {
   colors: string[]
@@ -44,7 +45,7 @@ export default function ColorsPanel(p: ColorsPanelProps) {
         <Alert type="warning" showIcon title="No wells yet" description="Create them in the Wells tab (Arrange crosses)." />
       )}
 
-      <Card size="small">
+      <Section id="colors-overview" title="Overview">
         <Flex justify="space-between" align="center">
           <Typography.Text>
             {assigned} of {p.colors.length} colors assigned
@@ -54,9 +55,9 @@ export default function ColorsPanel(p: ColorsPanelProps) {
             <Switch size="small" checked={p.previewPaint} onChange={p.onPreviewPaintChange} />
           </Space>
         </Flex>
-      </Card>
+      </Section>
 
-      <Card size="small" title="Drawing color → well" styles={{ body: { padding: 0 } }}>
+      <Section id="colors-map" title="Drawing color → well" flush>
         <Table<Row>
           size="small"
           rowKey="color"
@@ -139,7 +140,7 @@ export default function ColorsPanel(p: ColorsPanelProps) {
             },
           ]}
         />
-      </Card>
+      </Section>
     </Flex>
   )
 }

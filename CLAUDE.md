@@ -38,6 +38,9 @@ frontend/                   React + antd + TypeScript (Vite)
   src/components/ToolpathView.tsx  Brush paths on the bed at brush width
   src/components/StatusBar.tsx      Bottom status bar (project + save state, colors, layout)
   src/components/ProjectModals.tsx  New / rename (name dialog) and open-project table
+  src/components/Section.tsx        Collapsible box for the side panels (state kept in localStorage)
+  src/components/form.tsx           Field (label + tooltip), FieldRow (two per row), Num, SwitchField
+  src/theme.ts              Purple antd theme + header gradient / background colours
   src/placement.ts          Drawing placement on the bed (offset + scale)
   src/components/WellsPanel.tsx  Wells tab: palette, wells table, selected-well editor
   src/components/WellsView.tsx   Palette page and wells on the bed
@@ -278,6 +281,12 @@ checking, a cross counts as a circle the size of the cross (the paint spot).
   (File: Load SVG, well layout New/Open/Save/Save as · Export: pencil G-code · View:
   plotter settings). Dialogs are `Modal`s, settings go in a `Drawer`, and the side panels use
   `Tabs` + `Card` + `Table` + vertical `Form`. A status bar sits at the bottom.
+- **Look:** purple theme (`theme.ts`, ConfigProvider), so no blue anywhere. The header has a violet
+  gradient and logo, the canvas background is lavender, and tags use `purple`. Font: Inter (Google Fonts).
+- **Boxes** in the side panels are collapsible `Section`s (antd Collapse). Which ones are collapsed
+  is remembered in localStorage (`paint-plotter.collapsed-sections`). Use `Section` instead of `Card`.
+- **Forms:** vertical, small, built from `form.tsx`. Related fields go two per row (`FieldRow`), each
+  with its own label and a **tooltip (?) on every field** that explains the effect in practice.
 - Side panel tabs in workflow order: Drawing → Wells → Colors → Paint (narrow tab spacing, so
   all four fit in the 380 px panel).
 - **Bed view zoom/pan** (`Bed.tsx`): mouse wheel zooms around the cursor, dragging pans (only after

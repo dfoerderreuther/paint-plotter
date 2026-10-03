@@ -58,6 +58,7 @@ import ToolpathView from './components/ToolpathView'
 import WellsPanel from './components/WellsPanel'
 import WellsView from './components/WellsView'
 import { DEFAULT_PLACEMENT, placedRect, type Placement } from './placement'
+import { HEADER_GRADIENT, PURPLE } from './theme'
 
 const { Header, Sider, Content } = Layout
 
@@ -475,10 +476,27 @@ export default function App() {
 
   return (
     <Layout style={{ height: '100vh' }}>
-      <Header style={{ display: 'flex', alignItems: 'center', gap: 24, paddingInline: 16 }}>
-        <Typography.Title level={4} style={{ color: '#fff', margin: 0, whiteSpace: 'nowrap' }}>
-          Paint Plotter
-        </Typography.Title>
+      <Header style={{ display: 'flex', alignItems: 'center', gap: 24, paddingInline: 16, background: HEADER_GRADIENT }}>
+        <Flex align="center" gap={8}>
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 30,
+              height: 30,
+              borderRadius: 8,
+              background: 'rgba(255,255,255,0.15)',
+              color: '#fff',
+              fontSize: 16,
+            }}
+          >
+            <HighlightOutlined />
+          </span>
+          <Typography.Title level={4} style={{ color: '#fff', margin: 0, whiteSpace: 'nowrap', letterSpacing: 0.2 }}>
+            Paint Plotter
+          </Typography.Title>
+        </Flex>
         <AppMenu onAction={onMenu} />
         <Flex gap={4}>
           {projectName && (
@@ -491,7 +509,7 @@ export default function App() {
             >
               <Tag
                 icon={<FolderOutlined />}
-                color={projectName === DEFAULT_PROJECT ? 'warning' : 'processing'}
+                color={projectName === DEFAULT_PROJECT ? 'warning' : 'purple'}
                 style={{ cursor: 'pointer' }}
                 onClick={() => onMenu('project-rename')}
               >
@@ -608,7 +626,7 @@ export default function App() {
           )}
         </Sider>
 
-        <Content style={{ position: 'relative', background: '#f5f5f5' }}>
+        <Content style={{ position: 'relative', background: PURPLE.soft }}>
           {error && (
             <Alert style={{ margin: 16 }} type="error" showIcon title="Backend not reachable" description={error} />
           )}

@@ -3,10 +3,11 @@ import { createRoot } from 'react-dom/client'
 import { App as AntApp, ConfigProvider } from 'antd'
 import './index.css'
 import App from './App.tsx'
+import { theme } from './theme'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ConfigProvider>
+    <ConfigProvider theme={theme}>
       <AntApp>
         <App />
       </AntApp>

@@ -75,7 +75,7 @@ export function OpenProjectModal({ open, projects, current, onClose, onOpen, onD
             render: (_, r) => (
               <Space size={6}>
                 {r.name}
-                {r.name === current && <Tag color="blue">open</Tag>}
+                {r.name === current && <Tag color="purple">open</Tag>}
               </Space>
             ),
           },
